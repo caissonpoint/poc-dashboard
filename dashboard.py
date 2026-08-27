@@ -53,22 +53,12 @@ def load_payload():
     records = df.to_dict(orient="records")
 
     generated = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    n_processes = int(pd.read_parquet(PARQUET_PATH)["codigoProcesso"].nunique())
-    trade_dates = pd.to_datetime(df["Trade Date"], errors="coerce").dropna()
-    date_range = None
-    if len(trade_dates):
-        date_range = [trade_dates.min().strftime("%Y-%m-%d"), trade_dates.max().strftime("%Y-%m-%d")]
 
     return {
         "generated": generated,
         "columns": COLUMNS,
         "displayNames": DISPLAY_NAMES,
         "rows": records,
-        "kpis": {
-            "processes": n_processes,
-            "rows": len(records),
-            "dateRange": date_range,
-        },
     }
 
 
@@ -99,24 +89,20 @@ TEMPLATE = """<!doctype html>
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; display: flex; flex-direction: column; overflow: hidden; }
 header { padding: 12px 24px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex: none; }
-h1 { font-size: 18px; margin: 0; font-weight: 700; }
+h1 { font-size: 25px; margin: 0; font-weight: 700; }
 .subtitle { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
 .sources { padding: 6px 24px; display: flex; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--border); flex: none; }
 .pill { font-size: 11px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
 .pill:hover { border-color: var(--accent); color: var(--accent); }
 #theme-toggle { background: none; border: 1px solid var(--border); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 14px; color: var(--text); }
 main { padding: 12px 24px 10px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-bottom: 8px; flex: none; }
-.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; box-shadow: var(--shadow); }
-.kpi .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.kpi .value { font-size: 16px; font-weight: 700; margin-top: 2px; }
-.tso-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; flex: none; }
+.tso-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex: none; }
 .tso-chip { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; box-shadow: var(--shadow); white-space: nowrap; }
+.tso-chip.empty { color: var(--muted); }
 .tso-chip b { font-weight: 700; }
 .tso-chip .muted { color: var(--muted); }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; flex: none; }
 .toolbar select, .toolbar input { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; color: var(--text); font-size: 12.5px; font-family: var(--font); }
-.toolbar label.date-label { font-size: 11.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .toolbar button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; }
 .toolbar button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
 .count { color: var(--muted); font-size: 12px; margin-left: auto; }
@@ -125,7 +111,12 @@ table { border-collapse: collapse; width: auto; min-width: 100%; font-size: 12.5
 th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 th { position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; color: var(--muted); font-weight: 600; z-index: 2; position: relative; }
 th:hover { color: var(--accent); }
-th .arrow { opacity: .4; margin-left: 3px; }
+th.dragging { opacity: .4; }
+th.drag-over { box-shadow: inset 2px 0 0 var(--accent); }
+th .head-inner { display: inline-flex; align-items: center; gap: 3px; }
+th .arrow { opacity: .4; }
+th .filter-icon { opacity: .45; font-size: 10px; padding: 0 2px; }
+th .filter-icon:hover, th .filter-icon.active { opacity: 1; color: var(--accent); }
 th .resizer { position: absolute; right: 0; top: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 3; }
 th .resizer:hover, th .resizer.active { background: var(--accent); opacity: .5; }
 .truncate { overflow: hidden; text-overflow: ellipsis; }
@@ -133,6 +124,18 @@ tbody tr:hover { background: var(--accent-soft); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 footer { padding: 6px 24px; color: var(--muted); font-size: 11px; flex: none; }
 footer a { color: var(--muted); }
+.filter-menu { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(16,24,40,.18); padding: 8px; z-index: 50; min-width: 190px; max-width: 260px; font-weight: 400; color: var(--text); font-size: 12.5px; }
+.filter-menu .fm-list { max-height: 220px; overflow: auto; margin: 4px 0; }
+.filter-menu .fm-item { display: flex; align-items: center; gap: 6px; padding: 3px 2px; cursor: pointer; }
+.filter-menu .fm-item input { margin: 0; }
+.filter-menu .fm-row { display: flex; justify-content: space-between; gap: 6px; }
+.filter-menu .fm-row.actions { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
+.filter-menu button { font-size: 11.5px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.filter-menu button.link { background: none; border: none; color: var(--accent); padding: 2px 0; }
+.filter-menu button.primary { background: var(--accent); color: #fff; border: none; }
+.filter-menu button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+.filter-menu label.fm-date { display: block; font-size: 11px; color: var(--muted); margin: 6px 0 3px; }
+.filter-menu input[type="date"] { width: 100%; }
 </style>
 </head>
 <body>
@@ -147,14 +150,9 @@ footer a { color: var(--muted); }
   <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Source: Portal de Oferta de Capacidade</a>
 </div>
 <main>
-  <div class="kpis" id="kpis"></div>
   <div class="tso-row" id="tso-row"></div>
   <div class="toolbar">
-    <select id="f-transporter"><option value="">All pipelines</option></select>
-    <select id="f-type"><option value="">All transaction types</option></select>
     <select id="f-timing"><option value="">All trade timing</option></select>
-    <label class="date-label">From <input id="f-date-from" type="date"></label>
-    <label class="date-label">To <input id="f-date-to" type="date"></label>
     <input id="f-search" type="search" placeholder="Search process / delivery point&hellip;">
     <button class="secondary" id="btn-reset">Reset filters</button>
     <button id="btn-csv">Download CSV</button>
@@ -189,6 +187,9 @@ async function inflate(bytes) {
 
 const NUMERIC_COLS = new Set(["Flow Days", "Price", "R$/m3", "Avg Process Price", "Volume Accepted", "Total Value", "Volume Offered", "Total Volume"]);
 const DEFAULT_COL_WIDTH = { "Service Type": 220 };
+// Columns that get an Excel-style header filter menu (checkbox list, or a date
+// range picker for Trade Date). Everything else is header-sortable only.
+const FILTERABLE_COLS = new Set(["Transporter (TSO)", "Trade Date", "Transaction Type"]);
 
 function fmtNum(v, maxFrac) {
   if (v === null || v === undefined || v === "") return "";
@@ -199,11 +200,19 @@ function label(col) {
   return (DATA.displayNames && DATA.displayNames[col]) || col;
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 let DATA = null;
 let sortCol = "Trade Date";
 let sortDir = -1;
 let filtered = [];
 let columnWidths = Object.assign({}, DEFAULT_COL_WIDTH);
+let columnOrder = [];
+// columnFilters["Trade Date"] = {from, to}; columnFilters[otherCol] = Set of allowed values.
+let columnFilters = {};
+let draggedCol = null;
 
 function populateSelect(sel, values) {
   const uniq = [...new Set(values.filter(v => v !== null && v !== undefined && v !== ""))].sort();
@@ -222,11 +231,11 @@ function applyColWidth(el, px) {
 
 // Column widths must survive renderTable() rebuilding tbody's innerHTML on every
 // filter/sort/keystroke -- columnWidths is the persistent source of truth; both
-// header cells (built once) and body cells (rebuilt constantly) read from it.
+// header cells (rebuilt on reorder) and body cells (rebuilt constantly) read from it.
 function makeResizable() {
   const ths = document.querySelectorAll("#thead-row th");
   ths.forEach((th, idx) => {
-    const col = DATA.columns[idx];
+    const col = columnOrder[idx];
     const resizer = document.createElement("div");
     resizer.className = "resizer";
     th.appendChild(resizer);
@@ -253,43 +262,185 @@ function makeResizable() {
   });
 }
 
+function closeFilterMenus() {
+  document.querySelectorAll(".filter-menu").forEach(m => m.remove());
+}
+
+function updateFilterIcons() {
+  document.querySelectorAll("#thead-row th").forEach((th, idx) => {
+    const col = columnOrder[idx];
+    const icon = th.querySelector(".filter-icon");
+    if (icon) icon.classList.toggle("active", !!columnFilters[col]);
+  });
+}
+
+function openFilterMenu(col, anchorEl) {
+  const alreadyOpen = document.querySelector(".filter-menu");
+  closeFilterMenus();
+  if (alreadyOpen && alreadyOpen.dataset.col === col) return;
+
+  const menu = document.createElement("div");
+  menu.className = "filter-menu";
+  menu.dataset.col = col;
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.left = Math.min(rect.left, window.innerWidth - 270) + "px";
+  menu.style.top = (rect.bottom + 4) + "px";
+
+  if (col === "Trade Date") {
+    const cur = columnFilters[col] || {};
+    menu.innerHTML = `
+      <label class="fm-date">From</label>
+      <input type="date" class="fm-from" value="${cur.from || ""}">
+      <label class="fm-date">To</label>
+      <input type="date" class="fm-to" value="${cur.to || ""}">
+      <div class="fm-row actions">
+        <button class="secondary fm-clear">Clear</button>
+        <button class="primary fm-apply">Apply</button>
+      </div>`;
+    menu.querySelector(".fm-apply").addEventListener("click", () => {
+      const from = menu.querySelector(".fm-from").value;
+      const to = menu.querySelector(".fm-to").value;
+      if (from || to) columnFilters[col] = { from, to }; else delete columnFilters[col];
+      closeFilterMenus();
+      updateFilterIcons();
+      render();
+    });
+    menu.querySelector(".fm-clear").addEventListener("click", () => {
+      delete columnFilters[col];
+      closeFilterMenus();
+      updateFilterIcons();
+      render();
+    });
+  } else {
+    const values = [...new Set(DATA.rows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ""))].sort();
+    const active = columnFilters[col];
+    const itemsHtml = values.map(v => {
+      const checked = !active || active.has(v) ? "checked" : "";
+      return `<label class="fm-item"><input type="checkbox" value="${escapeHtml(v)}" ${checked}> ${escapeHtml(v)}</label>`;
+    }).join("");
+    menu.innerHTML = `
+      <div class="fm-row">
+        <button class="link fm-all">Select all</button>
+        <button class="link fm-none">Clear</button>
+      </div>
+      <div class="fm-list">${itemsHtml}</div>
+      <div class="fm-row actions">
+        <span></span>
+        <button class="primary fm-apply">Apply</button>
+      </div>`;
+    menu.querySelector(".fm-all").addEventListener("click", e => {
+      e.preventDefault();
+      menu.querySelectorAll(".fm-list input").forEach(c => { c.checked = true; });
+    });
+    menu.querySelector(".fm-none").addEventListener("click", e => {
+      e.preventDefault();
+      menu.querySelectorAll(".fm-list input").forEach(c => { c.checked = false; });
+    });
+    menu.querySelector(".fm-apply").addEventListener("click", () => {
+      const checked = [...menu.querySelectorAll(".fm-list input:checked")].map(c => c.value);
+      if (checked.length === 0 || checked.length === values.length) delete columnFilters[col];
+      else columnFilters[col] = new Set(checked);
+      closeFilterMenus();
+      updateFilterIcons();
+      render();
+    });
+  }
+
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener("mousedown", onOutsideClick), 0);
+  function onOutsideClick(e) {
+    if (!menu.contains(e.target) && e.target !== anchorEl) {
+      closeFilterMenus();
+      document.removeEventListener("mousedown", onOutsideClick);
+    }
+  }
+}
+
 function buildHeader() {
   const tr = document.getElementById("thead-row");
   tr.innerHTML = "";
-  DATA.columns.forEach((col, idx) => {
+  columnOrder.forEach((col, idx) => {
     const th = document.createElement("th");
+    th.draggable = true;
+    th.dataset.col = col;
+
+    const inner = document.createElement("span");
+    inner.className = "head-inner";
     const span = document.createElement("span");
     span.textContent = label(col);
-    th.appendChild(span);
+    inner.appendChild(span);
+    if (FILTERABLE_COLS.has(col)) {
+      const icon = document.createElement("span");
+      icon.className = "filter-icon";
+      icon.textContent = "▾";
+      icon.addEventListener("click", e => {
+        e.stopPropagation();
+        openFilterMenu(col, icon);
+      });
+      inner.appendChild(icon);
+    }
     const arrow = document.createElement("span");
     arrow.className = "arrow";
-    th.appendChild(arrow);
-    th.addEventListener("click", () => {
+    inner.appendChild(arrow);
+    th.appendChild(inner);
+
+    th.addEventListener("click", e => {
+      if (e.target.closest(".resizer") || e.target.closest(".filter-icon")) return;
       if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
       render();
     });
+
+    th.addEventListener("dragstart", e => {
+      draggedCol = col;
+      th.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+    });
+    th.addEventListener("dragend", () => {
+      th.classList.remove("dragging");
+      document.querySelectorAll("#thead-row th").forEach(x => x.classList.remove("drag-over"));
+    });
+    th.addEventListener("dragover", e => {
+      e.preventDefault();
+      if (col !== draggedCol) th.classList.add("drag-over");
+    });
+    th.addEventListener("dragleave", () => th.classList.remove("drag-over"));
+    th.addEventListener("drop", e => {
+      e.preventDefault();
+      th.classList.remove("drag-over");
+      if (!draggedCol || draggedCol === col) return;
+      const fromIdx = columnOrder.indexOf(draggedCol);
+      const toIdx = columnOrder.indexOf(col);
+      columnOrder.splice(fromIdx, 1);
+      columnOrder.splice(toIdx, 0, draggedCol);
+      buildHeader();
+      render();
+    });
+
     tr.appendChild(th);
   });
   makeResizable();
   const ths = document.querySelectorAll("#thead-row th");
-  DATA.columns.forEach((col, idx) => {
+  columnOrder.forEach((col, idx) => {
     if (columnWidths[col]) applyColWidth(ths[idx], columnWidths[col]);
   });
+  updateFilterIcons();
+  updateArrows();
 }
 
 function applyFilters() {
-  const transporter = document.getElementById("f-transporter").value;
-  const type = document.getElementById("f-type").value;
   const timing = document.getElementById("f-timing").value;
-  const dateFrom = document.getElementById("f-date-from").value;
-  const dateTo = document.getElementById("f-date-to").value;
   const search = document.getElementById("f-search").value.trim().toLowerCase();
   filtered = DATA.rows.filter(r => {
-    if (transporter && r["Transporter (TSO)"] !== transporter) return false;
-    if (type && r["Transaction Type"] !== type) return false;
     if (timing && r["Trade Timing"] !== timing) return false;
-    if (dateFrom && (!r["Trade Date"] || r["Trade Date"] < dateFrom)) return false;
-    if (dateTo && (!r["Trade Date"] || r["Trade Date"] > dateTo)) return false;
+    for (const col of ["Transporter (TSO)", "Transaction Type"]) {
+      const active = columnFilters[col];
+      if (active && !active.has(r[col])) return false;
+    }
+    const dateF = columnFilters["Trade Date"];
+    if (dateF) {
+      if (dateF.from && (!r["Trade Date"] || r["Trade Date"] < dateF.from)) return false;
+      if (dateF.to && (!r["Trade Date"] || r["Trade Date"] > dateF.to)) return false;
+    }
     if (search) {
       const hay = ((r["codigoProcesso"] || "") + " " + (r["Delivery Point"] || "")).toLowerCase();
       if (!hay.includes(search)) return false;
@@ -326,45 +477,31 @@ function mean(nums) {
   return valid.reduce((a, b) => a + b, 0) / valid.length;
 }
 
-function renderKpis() {
-  const k = DATA.kpis;
-  const recent = last7dRows();
-  const avg7d = mean(recent.map(r => r["R$/m3"]));
-  const el = document.getElementById("kpis");
-  const items = [
-    ["Processes", k.processes.toLocaleString("en-US")],
-    ["Trade Date Range", k.dateRange ? k.dateRange[0] + " → " + k.dateRange[1] : "—"],
-    ["Avg Price, Last 7d (R$/m³)", avg7d !== null ? avg7d.toFixed(2) : "—"],
-  ];
-  el.innerHTML = "";
-  for (const [lbl, value] of items) {
-    const div = document.createElement("div");
-    div.className = "kpi";
-    div.innerHTML = `<div class="label">${lbl}</div><div class="value">${value}</div>`;
-    el.appendChild(div);
-  }
-}
-
+// Shows every known pipeline, even ones with zero trades in the last 7 days --
+// derived from the full dataset, not just the recent window, so a quiet pipeline
+// doesn't just silently disappear from the row.
 function renderTsoRow() {
+  const allTsos = [...new Set(DATA.rows.map(r => r["Transporter (TSO)"]).filter(Boolean))].sort();
   const recent = last7dRows();
   const byTso = {};
   for (const r of recent) {
-    const tso = r["Transporter (TSO)"] || "—";
+    const tso = r["Transporter (TSO)"];
+    if (!tso) continue;
     (byTso[tso] = byTso[tso] || []).push(r);
   }
   const el = document.getElementById("tso-row");
   el.innerHTML = "";
-  const tsos = Object.keys(byTso).sort();
-  if (!tsos.length) {
-    el.innerHTML = '<span class="muted" style="font-size:12px;color:var(--muted);">No trades in the last 7 days</span>';
-    return;
-  }
-  for (const tso of tsos) {
-    const rows = byTso[tso];
+  for (const tso of allTsos) {
+    const rows = byTso[tso] || [];
     const avg = mean(rows.map(r => r["R$/m3"]));
     const chip = document.createElement("div");
-    chip.className = "tso-chip";
-    chip.innerHTML = `<b>${tso}</b> &middot; ${avg !== null ? avg.toFixed(2) : "—"} R$/m³ avg &middot; ${rows.length} trade${rows.length === 1 ? "" : "s"} <span class="muted">(7d)</span>`;
+    if (rows.length) {
+      chip.className = "tso-chip";
+      chip.innerHTML = `<b>${tso}</b> &middot; ${avg !== null ? avg.toFixed(2) : "—"} R$/m³ avg &middot; ${rows.length} trade${rows.length === 1 ? "" : "s"} <span class="muted">(7d)</span>`;
+    } else {
+      chip.className = "tso-chip empty";
+      chip.innerHTML = `<b>${tso}</b> &middot; no trades <span class="muted">(7d)</span>`;
+    }
     el.appendChild(chip);
   }
 }
@@ -374,7 +511,7 @@ function renderTable() {
   const frag = document.createDocumentFragment();
   for (const row of filtered) {
     const tr = document.createElement("tr");
-    for (const col of DATA.columns) {
+    for (const col of columnOrder) {
       const td = document.createElement("td");
       let v = row[col];
       if (v === null || v === undefined) v = "";
@@ -396,10 +533,10 @@ function renderTable() {
 
 function updateArrows() {
   const ths = document.querySelectorAll("#thead-row th");
-  const cols = DATA.columns;
   ths.forEach((th, idx) => {
     const arrow = th.querySelector(".arrow");
-    if (cols[idx] === sortCol) arrow.textContent = sortDir === 1 ? "↑" : "↓";
+    if (!arrow) return;
+    if (columnOrder[idx] === sortCol) arrow.textContent = sortDir === 1 ? "↑" : "↓";
     else arrow.textContent = "";
   });
 }
@@ -419,9 +556,9 @@ function toCsvValue(v) {
 }
 
 function downloadCsv() {
-  const lines = [DATA.columns.map(c => toCsvValue(label(c))).join(",")];
+  const lines = [columnOrder.map(c => toCsvValue(label(c))).join(",")];
   for (const row of filtered) {
-    lines.push(DATA.columns.map(c => toCsvValue(row[c])).join(","));
+    lines.push(columnOrder.map(c => toCsvValue(row[c])).join(","));
   }
   const blob = new Blob([lines.join("\\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -452,25 +589,19 @@ async function init() {
   const bytes = b64ToBytes(PAYLOAD_B64);
   const text = await inflate(bytes);
   DATA = JSON.parse(text);
+  columnOrder = DATA.columns.slice();
   document.getElementById("subtitle").textContent = "Last refreshed " + DATA.generated;
-  populateSelect(document.getElementById("f-transporter"), DATA.rows.map(r => r["Transporter (TSO)"]));
-  populateSelect(document.getElementById("f-type"), DATA.rows.map(r => r["Transaction Type"]));
   populateSelect(document.getElementById("f-timing"), DATA.rows.map(r => r["Trade Timing"]));
   buildHeader();
-  renderKpis();
   renderTsoRow();
   render();
-  for (const id of ["f-transporter", "f-type", "f-timing", "f-date-from", "f-date-to"]) {
-    document.getElementById(id).addEventListener("change", render);
-  }
+  document.getElementById("f-timing").addEventListener("change", render);
   document.getElementById("f-search").addEventListener("input", render);
   document.getElementById("btn-reset").addEventListener("click", () => {
-    document.getElementById("f-transporter").value = "";
-    document.getElementById("f-type").value = "";
     document.getElementById("f-timing").value = "";
-    document.getElementById("f-date-from").value = "";
-    document.getElementById("f-date-to").value = "";
     document.getElementById("f-search").value = "";
+    columnFilters = {};
+    updateFilterIcons();
     render();
   });
   document.getElementById("btn-csv").addEventListener("click", downloadCsv);
