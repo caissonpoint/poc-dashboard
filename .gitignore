@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.DS_Store
+run_refresh.local.bat
+data/raw_processos.json

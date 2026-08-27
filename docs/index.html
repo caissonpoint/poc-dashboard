@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POC Results Dashboard</title>
+<style>
+:root {
+  --bg: #f7f8fa; --panel: #ffffff; --border: #e2e5ea; --text: #1a1d23; --muted: #6b7280;
+  --accent: #1d6f5c; --accent-soft: #e6f2ef; --pos: #1d6f5c; --neg: #b3441e;
+  --shadow: 0 1px 2px rgba(16,24,40,.04);
+  --font: "Degular", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+[data-theme="dark"] {
+  --bg: #14161a; --panel: #1c1f24; --border: #2b2f36; --text: #ecedee; --muted: #9aa1ac;
+  --accent: #4fbf9f; --accent-soft: #1c2e29; --pos: #4fbf9f; --neg: #e08a5f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+header { padding: 20px 28px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+h1 { font-size: 22px; margin: 0; font-weight: 700; }
+.subtitle { color: var(--muted); font-size: 12.5px; margin-top: 4px; }
+.sources { padding: 8px 28px; display: flex; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+.pill { font-size: 11.5px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+.pill:hover { border-color: var(--accent); color: var(--accent); }
+#theme-toggle { background: none; border: 1px solid var(--border); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 16px; color: var(--text); }
+main { padding: 20px 28px 60px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
+.kpi .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.kpi .value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+.toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.toolbar select, .toolbar input { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--text); font-size: 13px; font-family: var(--font); }
+.toolbar button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+.toolbar button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+.count { color: var(--muted); font-size: 12.5px; margin-left: auto; }
+.table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: auto; box-shadow: var(--shadow); max-height: 68vh; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; white-space: nowrap; }
+th, td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; color: var(--muted); font-weight: 600; z-index: 1; }
+th:hover { color: var(--accent); }
+th .arrow { opacity: .4; margin-left: 3px; }
+tbody tr:hover { background: var(--accent-soft); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+footer { padding: 18px 28px 30px; color: var(--muted); font-size: 11.5px; }
+footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>POC Results Dashboard</h1>
+    <div class="subtitle" id="subtitle">Last refreshed &mdash;</div>
+  </div>
+  <button id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">&#9789;</button>
+</header>
+<div class="sources">
+  <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Source: Portal de Oferta de Capacidade</a>
+</div>
+<main>
+  <div class="kpis" id="kpis"></div>
+  <div class="toolbar">
+    <select id="f-transporter"><option value="">All transporters</option></select>
+    <select id="f-type"><option value="">All transaction types</option></select>
+    <select id="f-timing"><option value="">All trade timing</option></select>
+    <input id="f-search" type="search" placeholder="Search process / delivery point&hellip;">
+    <button class="secondary" id="btn-reset">Reset filters</button>
+    <button id="btn-csv">Download CSV</button>
+    <span class="count" id="row-count"></span>
+  </div>
+  <div class="table-wrap">
+    <table id="data-table">
+      <thead><tr id="thead-row"></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
+<footer>
+  &copy; <span id="year"></span> GasBrazil.com &middot; Data: Portal de Oferta de Capacidade (public API) &middot; Contact: <a href="mailto:eb@gasbrazil.com">eb@gasbrazil.com</a>
+</footer>
+<script>
+const PAYLOAD_B64 = "H4sIAAAAAAACA+2WXW/aMBSG/4rlq1YCZpuED98B/dCmaUUk7S6mXliJC15DnDkBhFD/e+0kjJC4adfrccU5x1+c532xD3DJY65YxkNIIUFk0EWjLhkC1Kd9DO79GezAQEabdZxC+gv6isVpIlXGFbjwvbvLvByKpZwrGfA0lTqhB4UcXOlFdXATyV3+HXgZU9lZ5joOT/E+/TvVF2sRL3WYTwEeV1sRmMX0hEqUH4YFmZAx8PeJSV3xSGy52oO5FLHZrBx9rM9VMXWyXYLyxOCYezA/k4NJEPDE9ENvIDMWgQcWbSr1u6cnrqrlPK3DJFDwsQOV3JlWHSy9otCf3DY7lqe781kXEUy+GAjnTayAGVg6+mbZtNde1L2muNZtCj22NjvuG42vLVKlUBWNDQmFd4nRl07oXk1ZxOKgYFtDReF00q8Do/CnyFahYjs9WSpQib7GgeIs5YBlIFvpc9fJF1hpv99zsQ34sVLHTjEyn3P6FBNnPB73Bg0Z1IcXaqDYLdNGFXTsIPTSsUvih+/ZJKHTuSSQ47RLArVLArdJAr8nCZ0HkxVnYZsm8NuaIHZN3N57uuF/NiIVJm1RQ7yJoroYilxJrwgsWItCg2odKOqhJssGxo8A9Kd2T08LT6PxuBUgbgeI3RaAeHgOsN8AeCPVjqkQXLjhZQvDfBc7QzyyM5zJeMnT3NhrHmfSZunFt6ajFzzcFAuVzl3wgIskqxvXQT27b4tC07Yji22HBI9soInVtB/27H/kbyL3r2eTaZP6fLVPRZD/b//mQWn6z5J2LaQHCLs20rXB/0z6nQsb4RbSwy7CLaQb5Srp8+InL+xyERvlsmSh/F3EPGHBs42ud91E64ss0oFZSPf8hJXkzrNgJVVLnrDa/EuIY/2jHtmgjupM9WvsORG6dQeYFEfgOnCObzS3A7f51NMZ3Pw2NztmZunj5e8gZ0jM5c+2y+Prwe05ZKiXCDW5BdPGMO/js95WHk2PLy+v9JX9xGsLAAA=";
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+async function inflate(bytes) {
+  const ds = new DecompressionStream("gzip");
+  const stream = new Blob([bytes]).stream().pipeThrough(ds);
+  const buf = await new Response(stream).arrayBuffer();
+  return new TextDecoder().decode(buf);
+}
+
+const NUMERIC_COLS = new Set(["Flow Days", "Price", "Avg Process Price", "Volume Accepted", "Total Value", "Volume Offered", "Total Volume", "pcr"]);
+const MONEY_COLS = new Set(["Price", "Avg Process Price", "Total Value"]);
+const VOL_COLS = new Set(["Volume Accepted", "Volume Offered", "Total Volume"]);
+
+function fmtNum(v) {
+  if (v === null || v === undefined || v === "") return "";
+  return Number(v).toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+let DATA = null;
+let sortCol = "Trade Date";
+let sortDir = -1;
+let filtered = [];
+
+function populateSelect(sel, values) {
+  const uniq = [...new Set(values.filter(v => v !== null && v !== undefined && v !== ""))].sort();
+  for (const v of uniq) {
+    const opt = document.createElement("option");
+    opt.value = v; opt.textContent = v;
+    sel.appendChild(opt);
+  }
+}
+
+function buildHeader() {
+  const tr = document.getElementById("thead-row");
+  tr.innerHTML = "";
+  for (const col of DATA.columns) {
+    const th = document.createElement("th");
+    th.textContent = col;
+    if (NUMERIC_COLS.has(col)) th.classList.add("num-head");
+    const arrow = document.createElement("span");
+    arrow.className = "arrow";
+    th.appendChild(arrow);
+    th.addEventListener("click", () => {
+      if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+      render();
+    });
+    tr.appendChild(th);
+  }
+}
+
+function applyFilters() {
+  const transporter = document.getElementById("f-transporter").value;
+  const type = document.getElementById("f-type").value;
+  const timing = document.getElementById("f-timing").value;
+  const search = document.getElementById("f-search").value.trim().toLowerCase();
+  filtered = DATA.rows.filter(r => {
+    if (transporter && r["Transporter (TSO)"] !== transporter) return false;
+    if (type && r["Transaction Type"] !== type) return false;
+    if (timing && r["Trade Timing"] !== timing) return false;
+    if (search) {
+      const hay = ((r["codigoProcesso"] || "") + " " + (r["Delivery Point"] || "")).toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+}
+
+function sortRows() {
+  filtered.sort((a, b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (av === null || av === undefined) av = "";
+    if (bv === null || bv === undefined) bv = "";
+    if (NUMERIC_COLS.has(sortCol)) { av = Number(av) || 0; bv = Number(bv) || 0; }
+    if (av < bv) return -1 * sortDir;
+    if (av > bv) return 1 * sortDir;
+    return 0;
+  });
+}
+
+function renderKpis() {
+  const k = DATA.kpis;
+  const el = document.getElementById("kpis");
+  const items = [
+    ["Processes", k.processes.toLocaleString("en-US")],
+    ["Rows (bids)", k.rows.toLocaleString("en-US")],
+    ["Volume Accepted (m³)", fmtNum(k.volumeAccepted)],
+    ["Total Value (R$)", fmtNum(k.totalValue)],
+    ["Avg Price (R$/m³)", k.avgPrice !== null ? k.avgPrice.toFixed(2) : "—"],
+    ["Trade Date Range", k.dateRange ? k.dateRange[0] + " → " + k.dateRange[1] : "—"],
+  ];
+  el.innerHTML = "";
+  for (const [label, value] of items) {
+    const div = document.createElement("div");
+    div.className = "kpi";
+    div.innerHTML = `<div class="label">${label}</div><div class="value">${value}</div>`;
+    el.appendChild(div);
+  }
+}
+
+function renderTable() {
+  const tbody = document.getElementById("tbody");
+  const frag = document.createDocumentFragment();
+  for (const row of filtered) {
+    const tr = document.createElement("tr");
+    for (const col of DATA.columns) {
+      const td = document.createElement("td");
+      let v = row[col];
+      if (v === null || v === undefined) v = "";
+      if (NUMERIC_COLS.has(col)) {
+        td.classList.add("num");
+        td.textContent = v === "" ? "" : fmtNum(v);
+      } else {
+        td.textContent = v;
+      }
+      tr.appendChild(td);
+    }
+    frag.appendChild(tr);
+  }
+  tbody.innerHTML = "";
+  tbody.appendChild(frag);
+  document.getElementById("row-count").textContent = `${filtered.length.toLocaleString("en-US")} of ${DATA.rows.length.toLocaleString("en-US")} rows`;
+}
+
+function updateArrows() {
+  const ths = document.querySelectorAll("#thead-row th");
+  ths.forEach(th => {
+    const col = th.firstChild.textContent;
+    const arrow = th.querySelector(".arrow");
+    if (col === sortCol) arrow.textContent = sortDir === 1 ? "↑" : "↓";
+    else arrow.textContent = "";
+  });
+}
+
+function render() {
+  applyFilters();
+  sortRows();
+  renderTable();
+  updateArrows();
+}
+
+function toCsvValue(v) {
+  if (v === null || v === undefined) return "";
+  const s = String(v);
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function downloadCsv() {
+  const lines = [DATA.columns.map(toCsvValue).join(",")];
+  for (const row of filtered) {
+    lines.push(DATA.columns.map(c => toCsvValue(row[c])).join(","));
+  }
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "poc_results.csv";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function initTheme() {
+  const stored = null; // no persistent storage in this environment; defaults to light
+  const btn = document.getElementById("theme-toggle");
+  function setTheme(mode) {
+    if (mode === "dark") { document.documentElement.setAttribute("data-theme", "dark"); btn.textContent = "☀"; }
+    else { document.documentElement.removeAttribute("data-theme"); btn.textContent = "☽"; }
+  }
+  setTheme("light");
+  btn.addEventListener("click", () => {
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    setTheme(isDark ? "light" : "dark");
+  });
+}
+
+async function init() {
+  document.getElementById("year").textContent = new Date().getFullYear();
+  const bytes = b64ToBytes(PAYLOAD_B64);
+  const text = await inflate(bytes);
+  DATA = JSON.parse(text);
+  document.getElementById("subtitle").textContent = "Last refreshed " + DATA.generated;
+  populateSelect(document.getElementById("f-transporter"), DATA.rows.map(r => r["Transporter (TSO)"]));
+  populateSelect(document.getElementById("f-type"), DATA.rows.map(r => r["Transaction Type"]));
+  populateSelect(document.getElementById("f-timing"), DATA.rows.map(r => r["Trade Timing"]));
+  buildHeader();
+  renderKpis();
+  render();
+  for (const id of ["f-transporter", "f-type", "f-timing"]) document.getElementById(id).addEventListener("change", render);
+  document.getElementById("f-search").addEventListener("input", render);
+  document.getElementById("btn-reset").addEventListener("click", () => {
+    document.getElementById("f-transporter").value = "";
+    document.getElementById("f-type").value = "";
+    document.getElementById("f-timing").value = "";
+    document.getElementById("f-search").value = "";
+    render();
+  });
+  document.getElementById("btn-csv").addEventListener("click", downloadCsv);
+  initTheme();
+}
+init();
+</script>
+</body>
+</html>

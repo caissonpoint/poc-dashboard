@@ -1,0 +1,63 @@
+name: Refresh POC dashboard
+
+on:
+  schedule:
+    # Daily at 11:00 UTC (08:00 America/Sao_Paulo). Full-history rebuild each run --
+    # the source API currently holds a few hundred records total, so this is cheap.
+    # Tighten the cadence (e.g. every few hours) if the source updates faster than daily.
+    - cron: "0 11 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch + build data
+        run: python poc_pipeline.py all
+
+      - name: Build dashboard
+        run: python dashboard.py docs/index.html
+
+      - name: Commit refreshed data + dashboard
+        run: |
+          git config user.name "poc-dashboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/poc_results.parquet docs/index.html
+          git diff --quiet --cached || git commit -m "Automated refresh $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
