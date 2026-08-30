@@ -171,6 +171,7 @@ footer a { color: var(--muted); }
     <input id="f-search" type="search" placeholder="Search process / delivery point&hellip;">
     <button class="secondary" id="btn-reset">Reset filters</button>
     <button class="secondary" id="btn-refresh" title="Reload the latest published build. Data itself refreshes automatically every 6 hours; this does not trigger a new pull.">&#8635; Reload latest</button>
+    <button class="secondary" id="btn-columns" title="Show or hide columns">Columns</button>
     <button id="btn-csv">Download CSV</button>
     <span class="count" id="row-count"></span>
   </div>
@@ -203,6 +204,11 @@ async function inflate(bytes) {
 
 const NUMERIC_COLS = new Set(["Flow Days", "Price", "R$/m3", "Avg Process Price", "Volume Accepted", "Total Value", "Volume Offered", "Total Volume"]);
 const DEFAULT_COL_WIDTH = { "Service Type": 220 };
+// Columns hidden by default so the table fits most screens without horizontal
+// scrolling. Users can re-enable any of these (or hide more) from the Columns
+// menu; the choice is remembered in localStorage.
+const DEFAULT_HIDDEN_COLS = ["codigoProcesso", "Flow Days", "Service Type", "Avg Process Price", "Total Value", "Volume Offered", "Total Volume"];
+const COL_PREFS_KEY = "pocDashboard.columnPrefs.v1";
 // Every column gets an Excel-style header filter menu: a date-range picker for
 // the date columns, a searchable checkbox list for everything else.
 const DATE_FILTER_COLS = new Set(["Trade Date", "Flow Date Start", "Flow Date End"]);
@@ -227,6 +233,29 @@ function fmtNum(v, maxFrac) {
 
 function label(col) {
   return (DATA.displayNames && DATA.displayNames[col]) || col;
+}
+
+function visibleColumnList() {
+  return columnOrder.filter(c => !hiddenCols.has(c));
+}
+
+function saveColumnPrefs() {
+  try {
+    localStorage.setItem(COL_PREFS_KEY, JSON.stringify({
+      hidden: [...hiddenCols],
+      order: columnOrder,
+      widths: columnWidths,
+    }));
+  } catch (e) { /* storage unavailable (private browsing, etc.) -- ignore */ }
+}
+
+function loadColumnPrefs() {
+  try {
+    const raw = localStorage.getItem(COL_PREFS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 // This same built HTML file is published to three places at once (custom
@@ -270,6 +299,7 @@ let sortDir = -1; // 1 = ascending, -1 = descending, 0 = unsorted (third click o
 let filtered = [];
 let columnWidths = Object.assign({}, DEFAULT_COL_WIDTH);
 let columnOrder = [];
+let hiddenCols = new Set(DEFAULT_HIDDEN_COLS);
 // columnFilters["Trade Date"] = {from, to}; columnFilters[otherCol] = Set of allowed values.
 let columnFilters = {};
 let draggedCol = null;
@@ -294,8 +324,9 @@ function applyColWidth(el, px) {
 // header cells (rebuilt on reorder) and body cells (rebuilt constantly) read from it.
 function makeResizable() {
   const ths = document.querySelectorAll("#thead-row th");
+  const visCols = visibleColumnList();
   ths.forEach((th, idx) => {
-    const col = columnOrder[idx];
+    const col = visCols[idx];
     const resizer = document.createElement("div");
     resizer.className = "resizer";
     th.appendChild(resizer);
@@ -315,6 +346,7 @@ function makeResizable() {
         resizer.classList.remove("active");
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
+        saveColumnPrefs();
       }
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
@@ -327,8 +359,9 @@ function closeFilterMenus() {
 }
 
 function updateFilterIcons() {
+  const visCols = visibleColumnList();
   document.querySelectorAll("#thead-row th").forEach((th, idx) => {
-    const col = columnOrder[idx];
+    const col = visCols[idx];
     const icon = th.querySelector(".filter-icon");
     if (icon) icon.classList.toggle("active", !!columnFilters[col]);
   });
@@ -435,10 +468,71 @@ function openFilterMenu(col, anchorEl) {
   }
 }
 
+function openColumnMenu(anchorEl) {
+  const already = document.querySelector('.filter-menu[data-col-menu]');
+  closeFilterMenus();
+  if (already) return;
+
+  const menu = document.createElement("div");
+  menu.className = "filter-menu";
+  menu.dataset.colMenu = "1";
+  const rect = anchorEl.getBoundingClientRect();
+  menu.style.left = Math.min(rect.left, window.innerWidth - 270) + "px";
+  menu.style.top = (rect.bottom + 4) + "px";
+
+  const itemsHtml = columnOrder.map(col => {
+    const checked = hiddenCols.has(col) ? "" : "checked";
+    return `<label class="fm-item"><input type="checkbox" data-col="${escapeHtml(col)}" ${checked}> ${escapeHtml(label(col))}</label>`;
+  }).join("");
+
+  menu.innerHTML = `
+    <div class="fm-list">${itemsHtml}</div>
+    <div class="fm-row actions">
+      <button class="link fm-default">Reset to default</button>
+      <button class="link fm-all">Show all</button>
+    </div>`;
+
+  menu.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener("change", () => {
+      const col = cb.dataset.col;
+      if (cb.checked) hiddenCols.delete(col); else hiddenCols.add(col);
+      saveColumnPrefs();
+      buildHeader();
+      render();
+    });
+  });
+  menu.querySelector(".fm-default").addEventListener("click", e => {
+    e.preventDefault();
+    hiddenCols = new Set(DEFAULT_HIDDEN_COLS);
+    saveColumnPrefs();
+    closeFilterMenus();
+    buildHeader();
+    render();
+  });
+  menu.querySelector(".fm-all").addEventListener("click", e => {
+    e.preventDefault();
+    hiddenCols = new Set();
+    saveColumnPrefs();
+    closeFilterMenus();
+    buildHeader();
+    render();
+  });
+
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener("mousedown", onColMenuOutsideClick), 0);
+  function onColMenuOutsideClick(e) {
+    if (!menu.contains(e.target) && e.target !== anchorEl) {
+      closeFilterMenus();
+      document.removeEventListener("mousedown", onColMenuOutsideClick);
+    }
+  }
+}
+
 function buildHeader() {
   const tr = document.getElementById("thead-row");
   tr.innerHTML = "";
-  columnOrder.forEach((col, idx) => {
+  const visCols = visibleColumnList();
+  visCols.forEach((col, idx) => {
     const th = document.createElement("th");
     th.draggable = true;
     th.dataset.col = col;
@@ -497,6 +591,7 @@ function buildHeader() {
       const toIdx = columnOrder.indexOf(col);
       columnOrder.splice(fromIdx, 1);
       columnOrder.splice(toIdx, 0, draggedCol);
+      saveColumnPrefs();
       buildHeader();
       render();
     });
@@ -505,7 +600,7 @@ function buildHeader() {
   });
   makeResizable();
   const ths = document.querySelectorAll("#thead-row th");
-  columnOrder.forEach((col, idx) => {
+  visCols.forEach((col, idx) => {
     if (columnWidths[col]) applyColWidth(ths[idx], columnWidths[col]);
   });
   updateFilterIcons();
@@ -650,9 +745,10 @@ function updateQuickFilterButtons() {
 function renderTable() {
   const tbody = document.getElementById("tbody");
   const frag = document.createDocumentFragment();
+  const visCols = visibleColumnList();
   for (const row of filtered) {
     const tr = document.createElement("tr");
-    for (const col of columnOrder) {
+    for (const col of visCols) {
       const td = document.createElement("td");
       let v = row[col];
       if (v === null || v === undefined) v = "";
@@ -674,10 +770,11 @@ function renderTable() {
 
 function updateArrows() {
   const ths = document.querySelectorAll("#thead-row th");
+  const visCols = visibleColumnList();
   ths.forEach((th, idx) => {
     const arrow = th.querySelector(".arrow");
     if (!arrow) return;
-    if (sortCol && columnOrder[idx] === sortCol) arrow.textContent = sortDir === 1 ? "↑" : "↓";
+    if (sortCol && visCols[idx] === sortCol) arrow.textContent = sortDir === 1 ? "↑" : "↓";
     else arrow.textContent = "";
   });
 }
@@ -732,6 +829,18 @@ async function init() {
   const text = await inflate(bytes);
   DATA = JSON.parse(text);
   columnOrder = DATA.columns.slice();
+  hiddenCols = new Set(DEFAULT_HIDDEN_COLS);
+  const savedPrefs = loadColumnPrefs();
+  if (savedPrefs) {
+    const validCols = new Set(DATA.columns);
+    if (Array.isArray(savedPrefs.order)) {
+      const restoredOrder = savedPrefs.order.filter(c => validCols.has(c));
+      for (const c of DATA.columns) if (!restoredOrder.includes(c)) restoredOrder.push(c);
+      if (restoredOrder.length === DATA.columns.length) columnOrder = restoredOrder;
+    }
+    if (Array.isArray(savedPrefs.hidden)) hiddenCols = new Set(savedPrefs.hidden.filter(c => validCols.has(c)));
+    if (savedPrefs.widths && typeof savedPrefs.widths === "object") columnWidths = Object.assign({}, DEFAULT_COL_WIDTH, savedPrefs.widths);
+  }
   document.getElementById("subtitle").textContent = "Last refreshed " + DATA.generated;
   populateSelect(document.getElementById("f-timing"), DATA.rows.map(r => r["Trade Timing"]));
   buildHeader();
@@ -746,6 +855,10 @@ async function init() {
     columnFilters = {};
     updateFilterIcons();
     render();
+  });
+  document.getElementById("btn-columns").addEventListener("click", e => {
+    e.stopPropagation();
+    openColumnMenu(e.currentTarget);
   });
   document.getElementById("btn-csv").addEventListener("click", downloadCsv);
   // Cache-busting reload -- fetches whatever the most recently published build
