@@ -3,3 +3,4 @@ __pycache__/
 .DS_Store
 run_refresh.local.bat
 data/raw_processos.json
+gh_pat.local
