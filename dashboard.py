@@ -88,13 +88,15 @@ TEMPLATE = """<!doctype html>
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; display: flex; flex-direction: column; overflow: hidden; }
-header { padding: 12px 24px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex: none; }
+header { padding: 12px 24px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex: none; }
 h1 { font-size: 25px; margin: 0; font-weight: 700; }
 .subtitle { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+.header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.header-links { display: flex; gap: 8px; flex-wrap: wrap; }
 .sources { padding: 6px 24px; display: flex; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--border); flex: none; }
 .pill { font-size: 11px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
 .pill:hover { border-color: var(--accent); color: var(--accent); }
-#theme-toggle { background: none; border: 1px solid var(--border); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 14px; color: var(--text); }
+#theme-toggle { background: none; border: 1px solid var(--border); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 14px; color: var(--text); flex: none; }
 main { padding: 12px 24px 10px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tso-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex: none; }
 .tso-chip { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; box-shadow: var(--shadow); white-space: nowrap; }
@@ -149,12 +151,16 @@ footer a { color: var(--muted); }
     <h1>POC Results Dashboard</h1>
     <div class="subtitle" id="subtitle">Last refreshed &mdash;</div>
   </div>
-  <button id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">&#9789;</button>
+  <div class="header-right">
+    <div class="header-links">
+      <a class="pill" id="link-home" href="https://gasbrazil.com">&larr; GasBrazil.com</a>
+      <a class="pill" id="link-ons" href="https://ons.gasbrazil.com">ONS Balances Dashboard &rarr;</a>
+    </div>
+    <button id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">&#9789;</button>
+  </div>
 </header>
 <div class="sources">
   <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Source: Portal de Oferta de Capacidade</a>
-  <a class="pill" id="link-home" href="https://gasbrazil.com">&larr; GasBrazil.com</a>
-  <a class="pill" id="link-ons" href="https://ons.gasbrazil.com">ONS Balances Dashboard &rarr;</a>
 </div>
 <main>
   <div class="tso-row" id="tso-row"></div>
@@ -163,6 +169,7 @@ footer a { color: var(--muted); }
     <select id="f-timing"><option value="">All trade timing</option></select>
     <input id="f-search" type="search" placeholder="Search process / delivery point&hellip;">
     <button class="secondary" id="btn-reset">Reset filters</button>
+    <button class="secondary" id="btn-refresh" title="Reload the latest published build. Data itself refreshes automatically every 6 hours; this does not trigger a new pull.">&#8635; Reload latest</button>
     <button id="btn-csv">Download CSV</button>
     <span class="count" id="row-count"></span>
   </div>
@@ -740,6 +747,14 @@ async function init() {
     render();
   });
   document.getElementById("btn-csv").addEventListener("click", downloadCsv);
+  // Cache-busting reload -- fetches whatever the most recently published build
+  // is (refreshed automatically every 6 hours by GitHub Actions). It does NOT
+  // trigger a new pull from the source API: that can only happen server-side,
+  // since the source has no CORS headers and a write-capable GitHub token
+  // can't safely be embedded in a public static page.
+  document.getElementById("btn-refresh").addEventListener("click", () => {
+    location.href = location.pathname + "?refreshed=" + Date.now();
+  });
   initTheme();
   initCrossLinks();
 }
