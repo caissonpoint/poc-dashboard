@@ -100,38 +100,47 @@ __FONT_FACE__
   --accent: #4a78c2; --accent-soft: rgba(74,120,194,.16); --pos: #4a78c2; --neg: #e08a5f;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; }
-body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; display: flex; flex-direction: column; overflow: hidden; }
-header { padding: 12px 24px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex: none; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+/* Same outer shell as ons-dashboard: a centered 1440px column with identical
+   padding, in normal document flow -- that page scrolls normally too; only
+   its own data tables cap their height and scroll internally (see the
+   .table-wrap comment below). */
+.wrap { max-width: 1440px; margin: 0 auto; padding: 20px 20px 64px; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
 h1 { font-size: 25px; margin: 0; letter-spacing: -.01em; }
-.subtitle { color: var(--muted2); font-size: 13px; margin-top: 2px; }
+.subtitle { color: var(--muted2); font-size: 13px; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .header-links { display: flex; gap: 8px; flex-wrap: wrap; }
-.sources { padding: 6px 24px; display: flex; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--border); flex: none; }
+.sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 14px; }
+.sources-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-right: 2px; }
 .pill { font-size: 11.5px; color: var(--muted2); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
 .pill:hover { background: var(--accent-soft); color: var(--text); border-color: var(--border-strong); }
 .navlink { font-size: 11.5px; color: var(--accent); text-decoration: none; font-weight: 600; border: 1px solid var(--accent); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
 .navlink:hover { background: var(--accent); color: #fff; }
-#theme-toggle { display: inline-flex; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 9px; line-height: 0; cursor: pointer; color: var(--text); flex: none; }
+#theme-toggle { display: inline-flex; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 9px; line-height: 0; cursor: pointer; color: var(--text); }
 #theme-toggle:hover { background: var(--accent-soft); }
 #theme-toggle svg { width: 16px; height: 16px; display: block; }
-main { padding: 12px 24px 10px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.tso-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex: none; }
+.tso-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .tso-chip { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; box-shadow: var(--shadow); white-space: nowrap; }
 .tso-chip.empty { color: var(--muted); }
 .tso-chip b { font-weight: 700; }
 .tso-chip .muted { color: var(--muted); }
-.quick-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex: none; }
+.quick-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
 .qf-btn { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--text); font-family: var(--font); }
 .qf-btn:hover { background: var(--accent-soft); }
 .qf-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; flex: none; }
-.toolbar select, .toolbar input { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 9px; color: var(--text); font-size: 12.5px; font-family: var(--font); }
+.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.toolbar select, .toolbar input { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 10px; color: var(--text); font-size: 12.5px; font-family: var(--font); }
+.toolbar select:hover { background: var(--accent-soft); }
 .toolbar button { background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 10px; font-size: 12.5px; cursor: pointer; font-family: var(--font); }
 .toolbar button:hover { background: var(--accent-soft); }
 .toolbar button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); }
 .count { color: var(--muted); font-size: 12px; margin-left: auto; }
-.table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: auto; box-shadow: var(--shadow); flex: 1; min-height: 0; }
+/* Capped-height, internally-scrolling table -- the same pattern ons-dashboard
+   uses for its own data tables (.scroll / .entlist there: max-height +
+   overflow, sticky header), just taller since here the table is the page's
+   primary content rather than a small secondary widget. */
+.table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: auto; box-shadow: var(--shadow); max-height: 65vh; }
 table { border-collapse: collapse; width: auto; min-width: 100%; font-size: 12.5px; white-space: nowrap; table-layout: auto; }
 th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
 th { position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; color: var(--muted2); font-weight: 600; z-index: 2; position: relative; }
@@ -147,7 +156,7 @@ th .resizer:hover, th .resizer.active { background: var(--accent); opacity: .5; 
 .truncate { overflow: hidden; text-overflow: ellipsis; }
 tbody tr:hover { background: var(--accent-soft); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
-footer { padding: 6px 24px; color: var(--muted); font-size: 11.5px; line-height: 1.7; flex: none; }
+footer { margin-top: 22px; color: var(--muted); font-size: 11.5px; line-height: 1.7; }
 footer a { color: var(--accent); }
 .filter-menu { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.16); padding: 8px; z-index: 50; min-width: 190px; max-width: 260px; font-weight: 400; color: var(--text); font-size: 12.5px; }
 .filter-menu .fm-list { max-height: 220px; overflow: auto; margin: 4px 0; }
@@ -165,6 +174,7 @@ footer a { color: var(--accent); }
 </style>
 </head>
 <body>
+<div class="wrap">
 <header>
   <div>
     <h1>POC Results Dashboard</h1>
@@ -179,30 +189,30 @@ footer a { color: var(--accent); }
   </div>
 </header>
 <div class="sources">
-  <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Source: Portal de Oferta de Capacidade</a>
+  <span class="sources-label">Data source</span>
+  <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Portal de Oferta de Capacidade</a>
 </div>
-<main>
-  <div class="tso-row" id="tso-row"></div>
-  <div class="quick-filters" id="quick-filters"></div>
-  <div class="toolbar">
-    <select id="f-timing"><option value="">All trade timing</option></select>
-    <input id="f-search" type="search" placeholder="Search process / delivery point&hellip;">
-    <button class="secondary" id="btn-reset">Reset filters</button>
-    <button class="secondary" id="btn-refresh" title="Reload the latest published build. Data itself refreshes automatically every 6 hours; this does not trigger a new pull.">&#8635; Reload latest</button>
-    <button class="secondary" id="btn-columns" title="Show or hide columns">Columns</button>
-    <button id="btn-csv">Download CSV</button>
-    <span class="count" id="row-count"></span>
-  </div>
-  <div class="table-wrap">
-    <table id="data-table">
-      <thead><tr id="thead-row"></tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
-  </div>
-</main>
+<div class="tso-row" id="tso-row"></div>
+<div class="quick-filters" id="quick-filters"></div>
+<div class="toolbar">
+  <select id="f-timing"><option value="">All trade timing</option></select>
+  <input id="f-search" type="search" placeholder="Search process / delivery point&hellip;">
+  <button class="secondary" id="btn-reset">Reset filters</button>
+  <button class="secondary" id="btn-refresh" title="Reload the latest published build. Data itself refreshes automatically every 6 hours; this does not trigger a new pull.">&#8635; Reload latest</button>
+  <button class="secondary" id="btn-columns" title="Show or hide columns">Columns</button>
+  <button id="btn-csv">Download CSV</button>
+  <span class="count" id="row-count"></span>
+</div>
+<div class="table-wrap">
+  <table id="data-table">
+    <thead><tr id="thead-row"></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
 <footer>
   &copy; <span id="year"></span> GasBrazil.com &middot; Data: Portal de Oferta de Capacidade (public API) &middot; Contact: <a href="mailto:eb@gasbrazil.com">eb@gasbrazil.com</a>
 </footer>
+</div>
 <script>
 const PAYLOAD_B64 = "__PAYLOAD__";
 
