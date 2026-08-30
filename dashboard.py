@@ -16,6 +16,11 @@ import pandas as pd
 HERE = Path(__file__).parent
 PARQUET_PATH = HERE / "data" / "poc_results.parquet"
 DEFAULT_OUT = HERE / "docs" / "index.html"
+# Same Degular font file used by ons-dashboard, embedded the same way, so the
+# two sites in the GasBrazil.com family actually render with the real
+# typeface instead of POC silently falling back to the OS default because no
+# @font-face for "Degular" was ever registered on this page.
+FONT_PATH = HERE / "fonts" / "Degular.ttf"
 
 # Price in the source data is R$/MMBtu. 28.8081 is the MMBtu-per-1000m3 factor
 # implied by the dataset's PCR (poder calorifico de referencia) convention --
@@ -74,30 +79,42 @@ TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>POC Results Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2303183D'/%3E%3Cpath d='M3 11.5 6 7l3 2.5L13 4' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
+__FONT_FACE__
 :root {
-  --bg: #f7f8fa; --panel: #ffffff; --border: #e2e5ea; --text: #1a1d23; --muted: #6b7280;
-  /* Accent colors match ons-dashboard's palette (--accent / --wash there) for visual consistency across the GasBrazil.com family. */
+  /* Palette matched directly to ons-dashboard's tokens (--plane/--surface-1/
+     --grid/--axis/--text-1/--text-2/--muted/--accent/--wash there) so the two
+     GasBrazil.com dashboards read as one visual family, not just a shared
+     accent color. --border/--border-strong split mirrors ons-dashboard's
+     --grid (subtle dividers) vs --axis (control borders). */
+  --bg: #f4f4f1; --panel: #fcfcfb; --border: #e1e0d9; --border-strong: #c3c2b7;
+  --text: #0b0b0b; --muted: #898781; --muted2: #52514e;
   --accent: #03183D; --accent-soft: rgba(3,24,61,.08); --pos: #03183D; --neg: #b3441e;
-  --shadow: 0 1px 2px rgba(16,24,40,.04);
+  --shadow: none;
   --font: "Degular", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 [data-theme="dark"] {
-  --bg: #14161a; --panel: #1c1f24; --border: #2b2f36; --text: #ecedee; --muted: #9aa1ac;
+  --bg: #0d0d0d; --panel: #1a1a19; --border: #2c2c2a; --border-strong: #383835;
+  --text: #ffffff; --muted: #898781; --muted2: #c3c2b7;
   --accent: #4a78c2; --accent-soft: rgba(74,120,194,.16); --pos: #4a78c2; --neg: #e08a5f;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; display: flex; flex-direction: column; overflow: hidden; }
 header { padding: 12px 24px 10px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; flex: none; }
-h1 { font-size: 25px; margin: 0; font-weight: 700; }
-.subtitle { color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+h1 { font-size: 25px; margin: 0; letter-spacing: -.01em; }
+.subtitle { color: var(--muted2); font-size: 13px; margin-top: 2px; }
 .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .header-links { display: flex; gap: 8px; flex-wrap: wrap; }
 .sources { padding: 6px 24px; display: flex; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--border); flex: none; }
-.pill { font-size: 11px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; }
-.pill:hover { border-color: var(--accent); color: var(--accent); }
-#theme-toggle { background: none; border: 1px solid var(--border); border-radius: 8px; width: 30px; height: 30px; cursor: pointer; font-size: 14px; color: var(--text); flex: none; }
+.pill { font-size: 11.5px; color: var(--muted2); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.pill:hover { background: var(--accent-soft); color: var(--text); border-color: var(--border-strong); }
+.navlink { font-size: 11.5px; color: var(--accent); text-decoration: none; font-weight: 600; border: 1px solid var(--accent); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.navlink:hover { background: var(--accent); color: #fff; }
+#theme-toggle { display: inline-flex; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 9px; line-height: 0; cursor: pointer; color: var(--text); flex: none; }
+#theme-toggle:hover { background: var(--accent-soft); }
+#theme-toggle svg { width: 16px; height: 16px; display: block; }
 main { padding: 12px 24px 10px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .tso-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex: none; }
 .tso-chip { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; box-shadow: var(--shadow); white-space: nowrap; }
@@ -106,18 +123,19 @@ main { padding: 12px 24px 10px; flex: 1; min-height: 0; display: flex; flex-dire
 .tso-chip .muted { color: var(--muted); }
 .quick-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex: none; }
 .qf-btn { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--text); font-family: var(--font); }
-.qf-btn:hover { border-color: var(--accent); color: var(--accent); }
+.qf-btn:hover { background: var(--accent-soft); }
 .qf-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; flex: none; }
-.toolbar select, .toolbar input { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; color: var(--text); font-size: 12.5px; font-family: var(--font); }
-.toolbar button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; }
-.toolbar button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
+.toolbar select, .toolbar input { background: var(--panel); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 9px; color: var(--text); font-size: 12.5px; font-family: var(--font); }
+.toolbar button { background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 10px; font-size: 12.5px; cursor: pointer; font-family: var(--font); }
+.toolbar button:hover { background: var(--accent-soft); }
+.toolbar button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); }
 .count { color: var(--muted); font-size: 12px; margin-left: auto; }
 .table-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: auto; box-shadow: var(--shadow); flex: 1; min-height: 0; }
 table { border-collapse: collapse; width: auto; min-width: 100%; font-size: 12.5px; white-space: nowrap; table-layout: auto; }
 th, td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
-th { position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; color: var(--muted); font-weight: 600; z-index: 2; position: relative; }
-th:hover { color: var(--accent); }
+th { position: sticky; top: 0; background: var(--panel); cursor: pointer; user-select: none; color: var(--muted2); font-weight: 600; z-index: 2; position: relative; }
+th:hover { background: var(--accent-soft); }
 th.dragging { opacity: .4; }
 th.drag-over { box-shadow: inset 2px 0 0 var(--accent); }
 th .head-inner { display: inline-flex; align-items: center; gap: 3px; }
@@ -129,9 +147,9 @@ th .resizer:hover, th .resizer.active { background: var(--accent); opacity: .5; 
 .truncate { overflow: hidden; text-overflow: ellipsis; }
 tbody tr:hover { background: var(--accent-soft); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
-footer { padding: 6px 24px; color: var(--muted); font-size: 11px; flex: none; }
-footer a { color: var(--muted); }
-.filter-menu { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(16,24,40,.18); padding: 8px; z-index: 50; min-width: 190px; max-width: 260px; font-weight: 400; color: var(--text); font-size: 12.5px; }
+footer { padding: 6px 24px; color: var(--muted); font-size: 11.5px; line-height: 1.7; flex: none; }
+footer a { color: var(--accent); }
+.filter-menu { position: fixed; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 20px rgba(0,0,0,.16); padding: 8px; z-index: 50; min-width: 190px; max-width: 260px; font-weight: 400; color: var(--text); font-size: 12.5px; }
 .filter-menu .fm-list { max-height: 220px; overflow: auto; margin: 4px 0; }
 .filter-menu .fm-item { display: flex; align-items: center; gap: 6px; padding: 3px 2px; cursor: pointer; }
 .filter-menu .fm-item input { margin: 0; }
@@ -154,10 +172,10 @@ footer a { color: var(--muted); }
   </div>
   <div class="header-right">
     <div class="header-links">
-      <a class="pill" id="link-home" href="https://gasbrazil.com">&larr; GasBrazil.com</a>
-      <a class="pill" id="link-ons" href="https://ons.gasbrazil.com">ONS Balances Dashboard &rarr;</a>
+      <a class="navlink" id="link-home" href="https://gasbrazil.com">&larr; GasBrazil.com</a>
+      <a class="navlink" id="link-ons" href="https://ons.gasbrazil.com">ONS Balances Dashboard &rarr;</a>
     </div>
-    <button id="theme-toggle" title="Toggle theme" aria-label="Toggle theme">&#9789;</button>
+    <button id="theme-toggle" title="Toggle theme" aria-label="Toggle theme"></button>
   </div>
 </header>
 <div class="sources">
@@ -810,11 +828,17 @@ function downloadCsv() {
   URL.revokeObjectURL(url);
 }
 
+// Same sun/moon icon markup as ons-dashboard (SUN_SVG/MOON_SVG there) --
+// the icon shown is the mode a click switches TO, matching that dashboard's
+// convention.
+const SUN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>';
+const MOON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
 function initTheme() {
   const btn = document.getElementById("theme-toggle");
   function setTheme(mode) {
-    if (mode === "dark") { document.documentElement.setAttribute("data-theme", "dark"); btn.textContent = "☀"; }
-    else { document.documentElement.removeAttribute("data-theme"); btn.textContent = "☽"; }
+    if (mode === "dark") { document.documentElement.setAttribute("data-theme", "dark"); btn.innerHTML = SUN_SVG; }
+    else { document.documentElement.removeAttribute("data-theme"); btn.innerHTML = MOON_SVG; }
   }
   setTheme("light");
   btn.addEventListener("click", () => {
@@ -882,7 +906,18 @@ init();
 def write_dashboard(out_path=DEFAULT_OUT):
     payload = load_payload()
     b64 = encode_payload(payload)
-    html = TEMPLATE.replace("__PAYLOAD__", b64)
+    if FONT_PATH.exists():
+        font_b64 = base64.b64encode(FONT_PATH.read_bytes()).decode("ascii")
+        font_face = (
+            "@font-face{font-family:'Degular';font-weight:400;font-style:normal;"
+            "font-display:swap;src:url(data:font/ttf;base64," + font_b64 +
+            ") format('truetype');}"
+        )
+    else:
+        # Repo checkout missing fonts/Degular.ttf -- degrade to the system
+        # fallback stack rather than shipping a broken @font-face rule.
+        font_face = ""
+    html = TEMPLATE.replace("__PAYLOAD__", b64).replace("__FONT_FACE__", font_face)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
