@@ -1,0 +1,33 @@
+<header>
+  <div>
+    <h1>ONS Balances</h1>
+    <div class="sub" id="subtitle">Loading&hellip;</div>
+  </div>
+  <div class="row">
+    <a class="navlink" id="link-home" href="https://gasbrazil.com">&larr; GasBrazil.com</a>
+    <a class="navlink" id="link-poc" href="https://poc.gasbrazil.com">POC Results Dashboard &rarr;</a>
+    <button id="themeBtn" class="iconBtn" title="Toggle light/dark" aria-label="Toggle light/dark"></button>
+  </div>
+</header>
+
+<div class="sources" id="sources">
+  <span class="sources-label">Data sources</span>
+  <a href="https://dados.ons.org.br/dataset/balanco-energia-subsistema" target="_blank" rel="noopener">Grid balances</a>
+  <a href="https://dados.ons.org.br/dataset/geracao-termica-despacho-2" target="_blank" rel="noopener">Thermal plants</a>
+  <a href="https://dados.ons.org.br/dataset/capacidade-geracao" target="_blank" rel="noopener">Installed capacity</a>
+  <a href="https://dados.ons.org.br/dataset/dados-hidrologicos-res" target="_blank" rel="noopener">Hydro reservoir levels</a>
+  <a href="https://dados.ons.org.br/dataset/ear-diario-por-subsistema" target="_blank" rel="noopener">Reservoir storage (EAR)</a>
+  <a href="https://dados.ons.org.br/dataset/ena-diario-por-subsistema" target="_blank" rel="noopener">Inflow energy (ENA)</a>
+  <a href="https://dados.ons.org.br/dataset/cmo-semi-horario" target="_blank" rel="noopener">Marginal cost (CMO)</a>
+</div>
+
+<div id="boot">Unpacking data&hellip;</div>
+<div id="app" hidden>
+
+<div class="tabbar">
+  <div class="tabs" id="tabs"></div>
+  <div class="row">
+    <button id="csvBtn">Download CSV</button>
+    <button id="csvAllBtn">Export all data (Excel)</button>
+  </div>
+</div>
