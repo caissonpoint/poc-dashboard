@@ -153,6 +153,8 @@ footer a { color: var(--muted); }
 </header>
 <div class="sources">
   <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Source: Portal de Oferta de Capacidade</a>
+  <a class="pill" id="link-home" href="https://gasbrazil.com">&larr; GasBrazil.com</a>
+  <a class="pill" id="link-ons" href="https://ons.gasbrazil.com">ONS Balances Dashboard &rarr;</a>
 </div>
 <main>
   <div class="tso-row" id="tso-row"></div>
@@ -217,6 +219,37 @@ function fmtNum(v, maxFrac) {
 
 function label(col) {
   return (DATA.displayNames && DATA.displayNames[col]) || col;
+}
+
+// This same built HTML file is published to three places at once (custom
+// domain, the caissonpoint GitHub Pages URL, and the gasbrazil.github.io
+// hub mirror), so the "back to GasBrazil.com" / "other dashboard" links
+// can't be baked in at build time -- they're resolved from location.hostname
+// at view time so each copy links to its own equivalent siblings.
+const SITE_LINKS = {
+  home: {
+    custom: "https://gasbrazil.com",
+    caissonpoint: "https://caissonpoint.github.io/gasbrazil-com/",
+    hub: "https://gasbrazil.github.io/",
+  },
+  ons: {
+    custom: "https://ons.gasbrazil.com",
+    caissonpoint: "https://caissonpoint.github.io/ons-dashboard/",
+    hub: "https://gasbrazil.github.io/ons/",
+  },
+};
+
+function siteFlavor() {
+  const h = location.hostname;
+  if (h === "gasbrazil.github.io") return "hub";
+  if (h === "caissonpoint.github.io") return "caissonpoint";
+  return "custom"; // gasbrazil.com / *.gasbrazil.com -- also the safe default for local/unknown hosts
+}
+
+function initCrossLinks() {
+  const flavor = siteFlavor();
+  document.getElementById("link-home").href = SITE_LINKS.home[flavor];
+  document.getElementById("link-ons").href = SITE_LINKS.ons[flavor];
 }
 
 function escapeHtml(s) {
@@ -708,6 +741,7 @@ async function init() {
   });
   document.getElementById("btn-csv").addEventListener("click", downloadCsv);
   initTheme();
+  initCrossLinks();
 }
 init();
 </script>
