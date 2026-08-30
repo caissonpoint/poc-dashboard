@@ -77,13 +77,14 @@ TEMPLATE = """<!doctype html>
 <style>
 :root {
   --bg: #f7f8fa; --panel: #ffffff; --border: #e2e5ea; --text: #1a1d23; --muted: #6b7280;
-  --accent: #1d6f5c; --accent-soft: #e6f2ef; --pos: #1d6f5c; --neg: #b3441e;
+  /* Accent colors match ons-dashboard's palette (--accent / --wash there) for visual consistency across the GasBrazil.com family. */
+  --accent: #03183D; --accent-soft: rgba(3,24,61,.08); --pos: #03183D; --neg: #b3441e;
   --shadow: 0 1px 2px rgba(16,24,40,.04);
-  --font: "Degular", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font: "Degular", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 [data-theme="dark"] {
   --bg: #14161a; --panel: #1c1f24; --border: #2b2f36; --text: #ecedee; --muted: #9aa1ac;
-  --accent: #4fbf9f; --accent-soft: #1c2e29; --pos: #4fbf9f; --neg: #e08a5f;
+  --accent: #4a78c2; --accent-soft: rgba(74,120,194,.16); --pos: #4a78c2; --neg: #e08a5f;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; }
