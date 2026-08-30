@@ -101,6 +101,10 @@ main { padding: 12px 24px 10px; flex: 1; min-height: 0; display: flex; flex-dire
 .tso-chip.empty { color: var(--muted); }
 .tso-chip b { font-weight: 700; }
 .tso-chip .muted { color: var(--muted); }
+.quick-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; flex: none; }
+.qf-btn { background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer; color: var(--text); font-family: var(--font); }
+.qf-btn:hover { border-color: var(--accent); color: var(--accent); }
+.qf-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; flex: none; }
 .toolbar select, .toolbar input { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 5px 9px; color: var(--text); font-size: 12.5px; font-family: var(--font); }
 .toolbar button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 6px 13px; font-size: 12.5px; cursor: pointer; }
@@ -136,6 +140,7 @@ footer a { color: var(--muted); }
 .filter-menu button.secondary { background: var(--panel); color: var(--text); border: 1px solid var(--border); }
 .filter-menu label.fm-date { display: block; font-size: 11px; color: var(--muted); margin: 6px 0 3px; }
 .filter-menu input[type="date"] { width: 100%; }
+.filter-menu input[type="text"].fm-search { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 12px; margin-bottom: 6px; }
 </style>
 </head>
 <body>
@@ -151,6 +156,7 @@ footer a { color: var(--muted); }
 </div>
 <main>
   <div class="tso-row" id="tso-row"></div>
+  <div class="quick-filters" id="quick-filters"></div>
   <div class="toolbar">
     <select id="f-timing"><option value="">All trade timing</option></select>
     <input id="f-search" type="search" placeholder="Search process / delivery point&hellip;">
@@ -187,9 +193,22 @@ async function inflate(bytes) {
 
 const NUMERIC_COLS = new Set(["Flow Days", "Price", "R$/m3", "Avg Process Price", "Volume Accepted", "Total Value", "Volume Offered", "Total Volume"]);
 const DEFAULT_COL_WIDTH = { "Service Type": 220 };
-// Columns that get an Excel-style header filter menu (checkbox list, or a date
-// range picker for Trade Date). Everything else is header-sortable only.
-const FILTERABLE_COLS = new Set(["Transporter (TSO)", "Trade Date", "Transaction Type"]);
+// Every column gets an Excel-style header filter menu: a date-range picker for
+// the date columns, a searchable checkbox list for everything else.
+const DATE_FILTER_COLS = new Set(["Trade Date", "Flow Date Start", "Flow Date End"]);
+
+// Quick-filter chips above the toolbar. "set" writes columnFilters[col] to a
+// Set of allowed values (same shape the header checkbox menu uses); "days"
+// writes a {from, to} range ending today (same shape the date-range menu
+// uses). Clicking an already-active chip clears that column's filter.
+const QUICK_FILTERS = [
+  { key: "last7", label: "Last 7 Days", col: "Trade Date", type: "days", days: 7 },
+  { key: "last30", label: "Last 30 Days", col: "Trade Date", type: "days", days: 30 },
+  { key: "gus-residual", label: "GUS + Residual Balancing", col: "Transaction Type", type: "set", values: ["GUS Acquisition", "Residual Balancing"] },
+  { key: "tso-TAG", label: "TAG", col: "Transporter (TSO)", type: "set", values: ["TAG"] },
+  { key: "tso-NTS", label: "NTS", col: "Transporter (TSO)", type: "set", values: ["NTS"] },
+  { key: "tso-TBG", label: "TBG", col: "Transporter (TSO)", type: "set", values: ["TBG"] },
+];
 
 function fmtNum(v, maxFrac) {
   if (v === null || v === undefined || v === "") return "";
@@ -206,7 +225,7 @@ function escapeHtml(s) {
 
 let DATA = null;
 let sortCol = "Trade Date";
-let sortDir = -1;
+let sortDir = -1; // 1 = ascending, -1 = descending, 0 = unsorted (third click on a header)
 let filtered = [];
 let columnWidths = Object.assign({}, DEFAULT_COL_WIDTH);
 let columnOrder = [];
@@ -286,7 +305,7 @@ function openFilterMenu(col, anchorEl) {
   menu.style.left = Math.min(rect.left, window.innerWidth - 270) + "px";
   menu.style.top = (rect.bottom + 4) + "px";
 
-  if (col === "Trade Date") {
+  if (DATE_FILTER_COLS.has(col)) {
     const cur = columnFilters[col] || {};
     menu.innerHTML = `
       <label class="fm-date">From</label>
@@ -312,33 +331,52 @@ function openFilterMenu(col, anchorEl) {
       render();
     });
   } else {
-    const values = [...new Set(DATA.rows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ""))].sort();
+    // Raw (untyped) unique values, sorted numerically for numeric columns and
+    // lexicographically otherwise. Checkbox `value` attributes are always
+    // strings, so filter Sets are stored/compared as strings via String(v) --
+    // that's what lets a numeric column's active Set match r[col] (a number).
+    const rawValues = [...new Set(DATA.rows.map(r => r[col]).filter(v => v !== null && v !== undefined && v !== ""))];
+    if (NUMERIC_COLS.has(col)) rawValues.sort((a, b) => a - b); else rawValues.sort();
     const active = columnFilters[col];
-    const itemsHtml = values.map(v => {
-      const checked = !active || active.has(v) ? "checked" : "";
-      return `<label class="fm-item"><input type="checkbox" value="${escapeHtml(v)}" ${checked}> ${escapeHtml(v)}</label>`;
+    const itemsHtml = rawValues.map(v => {
+      const vs = String(v);
+      const checked = !active || active.has(vs) ? "checked" : "";
+      const displayVal = NUMERIC_COLS.has(col) ? fmtNum(v) : escapeHtml(vs);
+      return `<label class="fm-item"><input type="checkbox" value="${escapeHtml(vs)}" ${checked}> ${displayVal}</label>`;
     }).join("");
     menu.innerHTML = `
+      <input type="text" class="fm-search" placeholder="Search&hellip;">
       <div class="fm-row">
-        <button class="link fm-all">Select all</button>
         <button class="link fm-none">Clear</button>
+        <button class="link fm-all">Select all</button>
       </div>
       <div class="fm-list">${itemsHtml}</div>
       <div class="fm-row actions">
         <span></span>
         <button class="primary fm-apply">Apply</button>
       </div>`;
+    menu.querySelector(".fm-search").addEventListener("input", e => {
+      const q = e.target.value.trim().toLowerCase();
+      menu.querySelectorAll(".fm-item").forEach(item => {
+        item.style.display = item.textContent.trim().toLowerCase().includes(q) ? "" : "none";
+      });
+    });
+    // Select all / Clear act only on the currently visible (searched) rows.
     menu.querySelector(".fm-all").addEventListener("click", e => {
       e.preventDefault();
-      menu.querySelectorAll(".fm-list input").forEach(c => { c.checked = true; });
+      menu.querySelectorAll(".fm-item").forEach(item => {
+        if (item.style.display !== "none") item.querySelector("input").checked = true;
+      });
     });
     menu.querySelector(".fm-none").addEventListener("click", e => {
       e.preventDefault();
-      menu.querySelectorAll(".fm-list input").forEach(c => { c.checked = false; });
+      menu.querySelectorAll(".fm-item").forEach(item => {
+        if (item.style.display !== "none") item.querySelector("input").checked = false;
+      });
     });
     menu.querySelector(".fm-apply").addEventListener("click", () => {
       const checked = [...menu.querySelectorAll(".fm-list input:checked")].map(c => c.value);
-      if (checked.length === 0 || checked.length === values.length) delete columnFilters[col];
+      if (checked.length === 0 || checked.length === rawValues.length) delete columnFilters[col];
       else columnFilters[col] = new Set(checked);
       closeFilterMenus();
       updateFilterIcons();
@@ -369,16 +407,14 @@ function buildHeader() {
     const span = document.createElement("span");
     span.textContent = label(col);
     inner.appendChild(span);
-    if (FILTERABLE_COLS.has(col)) {
-      const icon = document.createElement("span");
-      icon.className = "filter-icon";
-      icon.textContent = "▾";
-      icon.addEventListener("click", e => {
-        e.stopPropagation();
-        openFilterMenu(col, icon);
-      });
-      inner.appendChild(icon);
-    }
+    const icon = document.createElement("span");
+    icon.className = "filter-icon";
+    icon.textContent = "▾";
+    icon.addEventListener("click", e => {
+      e.stopPropagation();
+      openFilterMenu(col, icon);
+    });
+    inner.appendChild(icon);
     const arrow = document.createElement("span");
     arrow.className = "arrow";
     inner.appendChild(arrow);
@@ -386,7 +422,15 @@ function buildHeader() {
 
     th.addEventListener("click", e => {
       if (e.target.closest(".resizer") || e.target.closest(".filter-icon")) return;
-      if (sortCol === col) sortDir *= -1; else { sortCol = col; sortDir = 1; }
+      // Three-state cycle per column: ascending -> descending -> unsorted.
+      // Clicking a different column always starts it at ascending.
+      if (sortCol === col) {
+        if (sortDir === 1) sortDir = -1;
+        else if (sortDir === -1) { sortDir = 0; sortCol = null; }
+        else { sortCol = col; sortDir = 1; }
+      } else {
+        sortCol = col; sortDir = 1;
+      }
       render();
     });
 
@@ -432,14 +476,15 @@ function applyFilters() {
   const search = document.getElementById("f-search").value.trim().toLowerCase();
   filtered = DATA.rows.filter(r => {
     if (timing && r["Trade Timing"] !== timing) return false;
-    for (const col of ["Transporter (TSO)", "Transaction Type"]) {
+    for (const col of DATA.columns) {
       const active = columnFilters[col];
-      if (active && !active.has(r[col])) return false;
-    }
-    const dateF = columnFilters["Trade Date"];
-    if (dateF) {
-      if (dateF.from && (!r["Trade Date"] || r["Trade Date"] < dateF.from)) return false;
-      if (dateF.to && (!r["Trade Date"] || r["Trade Date"] > dateF.to)) return false;
+      if (!active) continue;
+      if (DATE_FILTER_COLS.has(col)) {
+        if (active.from && (!r[col] || r[col] < active.from)) return false;
+        if (active.to && (!r[col] || r[col] > active.to)) return false;
+      } else if (!active.has(String(r[col]))) {
+        return false;
+      }
     }
     if (search) {
       const hay = ((r["codigoProcesso"] || "") + " " + (r["Delivery Point"] || "")).toLowerCase();
@@ -450,6 +495,7 @@ function applyFilters() {
 }
 
 function sortRows() {
+  if (!sortCol || sortDir === 0) return; // third click on a header clears sorting
   filtered.sort((a, b) => {
     let av = a[sortCol], bv = b[sortCol];
     if (av === null || av === undefined) av = "";
@@ -506,6 +552,60 @@ function renderTsoRow() {
   }
 }
 
+function isoDate(d) { return d.toISOString().slice(0, 10); }
+
+function daysAgoRange(n) {
+  const now = new Date();
+  const from = new Date(now.getTime() - n * 24 * 3600 * 1000);
+  return { from: isoDate(from), to: isoDate(now) };
+}
+
+function setsEqual(a, b) {
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
+
+function quickFilterActive(qf) {
+  const active = columnFilters[qf.col];
+  if (!active) return false;
+  if (qf.type === "set") return active instanceof Set && setsEqual(active, new Set(qf.values));
+  const range = daysAgoRange(qf.days);
+  return active.from === range.from && active.to === range.to;
+}
+
+function toggleQuickFilter(qf) {
+  if (quickFilterActive(qf)) {
+    delete columnFilters[qf.col];
+  } else if (qf.type === "set") {
+    columnFilters[qf.col] = new Set(qf.values);
+  } else {
+    columnFilters[qf.col] = daysAgoRange(qf.days);
+  }
+  updateFilterIcons();
+  render();
+}
+
+function buildQuickFilters() {
+  const el = document.getElementById("quick-filters");
+  el.innerHTML = "";
+  for (const qf of QUICK_FILTERS) {
+    const btn = document.createElement("button");
+    btn.className = "qf-btn";
+    btn.dataset.qf = qf.key;
+    btn.textContent = qf.label;
+    btn.addEventListener("click", () => toggleQuickFilter(qf));
+    el.appendChild(btn);
+  }
+}
+
+function updateQuickFilterButtons() {
+  document.querySelectorAll(".qf-btn").forEach(btn => {
+    const qf = QUICK_FILTERS.find(q => q.key === btn.dataset.qf);
+    btn.classList.toggle("active", quickFilterActive(qf));
+  });
+}
+
 function renderTable() {
   const tbody = document.getElementById("tbody");
   const frag = document.createDocumentFragment();
@@ -536,7 +636,7 @@ function updateArrows() {
   ths.forEach((th, idx) => {
     const arrow = th.querySelector(".arrow");
     if (!arrow) return;
-    if (columnOrder[idx] === sortCol) arrow.textContent = sortDir === 1 ? "↑" : "↓";
+    if (sortCol && columnOrder[idx] === sortCol) arrow.textContent = sortDir === 1 ? "↑" : "↓";
     else arrow.textContent = "";
   });
 }
@@ -546,6 +646,7 @@ function render() {
   sortRows();
   renderTable();
   updateArrows();
+  updateQuickFilterButtons();
 }
 
 function toCsvValue(v) {
@@ -594,6 +695,7 @@ async function init() {
   populateSelect(document.getElementById("f-timing"), DATA.rows.map(r => r["Trade Timing"]));
   buildHeader();
   renderTsoRow();
+  buildQuickFilters();
   render();
   document.getElementById("f-timing").addEventListener("change", render);
   document.getElementById("f-search").addEventListener("input", render);
