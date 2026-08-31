@@ -171,6 +171,26 @@ footer a { color: var(--accent); }
 .filter-menu label.fm-date { display: block; font-size: 11px; color: var(--muted); margin: 6px 0 3px; }
 .filter-menu input[type="date"] { width: 100%; }
 .filter-menu input[type="text"].fm-search { width: 100%; box-sizing: border-box; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 12px; margin-bottom: 6px; }
+.chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+.panel-title { font-size: 13px; font-weight: 600; margin: 0 0 2px; }
+.panel-note { font-size: 11.5px; color: var(--muted); margin: 0 0 12px; }
+.chart-picker { display: flex; flex-wrap: wrap; gap: 14px 18px; margin-bottom: 12px; }
+.pick-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pick-group-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-right: 2px; }
+.series-btn { display: inline-flex; align-items: center; gap: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px 4px 8px; font-size: 12px; cursor: pointer; color: var(--text); font-family: var(--font); }
+.series-btn:hover { background: var(--accent-soft); }
+.series-btn.active { border-color: var(--border-strong); font-weight: 600; }
+.series-btn .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; background: var(--border-strong); }
+#chart-host svg { display: block; overflow: hidden; }
+.chart-empty { color: var(--muted); font-size: 13px; padding: 44px 0; text-align: center; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 12px; color: var(--muted2); }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.legend .sw { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.tt { position: fixed; pointer-events: none; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.16); z-index: 50; display: none; min-width: 200px; }
+.tt .d { font-weight: 600; margin-bottom: 5px; }
+.tt table { border-collapse: collapse; width: 100%; }
+.tt td { padding: 1px 0; }
+.tt td.v { text-align: right; padding-left: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>
 </head>
 <body>
@@ -193,6 +213,12 @@ footer a { color: var(--accent); }
   <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Portal de Oferta de Capacidade</a>
 </div>
 <div class="tso-row" id="tso-row"></div>
+<div class="chart-card">
+  <p class="panel-title">Price Trend</p>
+  <p class="panel-note">Pick pipeline / transaction type combinations below — left axis R$/MMBtu, right axis R$/m³. Reflects the filters above.</p>
+  <div class="chart-picker" id="chart-picker"></div>
+  <div id="chart-host"></div>
+</div>
 <div class="quick-filters" id="quick-filters"></div>
 <div class="toolbar">
   <select id="f-timing"><option value="">All trade timing</option></select>
@@ -213,6 +239,7 @@ footer a { color: var(--accent); }
   &copy; <span id="year"></span> GasBrazil.com &middot; Data: Portal de Oferta de Capacidade (public API) &middot; Contact: <a href="mailto:eb@gasbrazil.com">eb@gasbrazil.com</a>
 </footer>
 </div>
+<div class="tt" id="chart-tt"></div>
 <script>
 const PAYLOAD_B64 = "__PAYLOAD__";
 
@@ -253,6 +280,281 @@ const QUICK_FILTERS = [
   { key: "tso-NTS", label: "NTS", col: "Transporter (TSO)", type: "set", values: ["NTS"] },
   { key: "tso-TBG", label: "TBG", col: "Transporter (TSO)", type: "set", values: ["TBG"] },
 ];
+
+/* ---------- price chart -----------------------------------------------------
+   A single combined SVG line chart: pick any Pipeline + Transaction Type
+   combination as a toggle chip below, each becomes its own colored line.
+   Left axis is R$/MMBtu (the source unit); the right axis mirrors the same
+   gridlines rescaled to R$/m3 (R$/m3 = R$/MMBtu / MMBTU_PER_M3, a fixed
+   linear factor -- same constant used for the table's R$/m3 column), so
+   both units read off one chart instead of duplicating panels. The chart
+   plots against the table's `filtered` rows, so the existing toolbar /
+   quick-filter / column filters (date range, pipeline, transaction type,
+   search) narrow the chart exactly like they narrow the table -- there's
+   no separate date range control for the chart itself. POC results are
+   event-driven (irregular auction dates), not a daily-published series
+   like ons-dashboard's, so points are plotted on a true elapsed-time axis
+   and connected date-to-date rather than against a dense calendar grid.
+------------------------------------------------------------------------- */
+const MMBTU_PER_M3 = 28.8081;
+const CHART_PALETTE_LIGHT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+const CHART_PALETTE_DARK = ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"];
+// Fixed chip order within a pipeline group -- GUS/Residual first since
+// those are the two Eric most often looks at together; anything not listed
+// here (a new transaction type the API adds later) is appended
+// alphabetically so it still shows up rather than silently disappearing.
+const TRANSACTION_TYPE_ORDER = ["GUS Acquisition", "Residual Balancing", "Operational Balancing", "Linepack", "Congestionamento"];
+const PIPELINE_ORDER = ["TAG", "NTS", "TBG"];
+
+const comboKey = (pipeline, type) => pipeline + "||" + type;
+const comboLabel = (pipeline, type) => pipeline + " · " + type;
+
+let chartPicked = new Set();
+let chartResizeTimer = null;
+const chartSlots = new Map();
+function chartClaimSlot(key) {
+  if (chartSlots.has(key)) return chartSlots.get(key);
+  const slot = chartSlots.size % CHART_PALETTE_LIGHT.length;
+  chartSlots.set(key, slot);
+  return slot;
+}
+function chartColorOf(key) {
+  const dark = document.documentElement.getAttribute("data-theme") === "dark";
+  return (dark ? CHART_PALETTE_DARK : CHART_PALETTE_LIGHT)[chartClaimSlot(key)];
+}
+
+// Every (pipeline, transaction type) pair with at least one priced row,
+// anywhere in the dataset -- the picker's chip list, independent of the
+// table's current filters so a chip never disappears just because a
+// filter happens to be narrowing the table right now.
+function availableCombos() {
+  const seen = new Set();
+  for (const r of DATA.rows) {
+    if (r["Price"] === null || r["Price"] === undefined) continue;
+    const pipeline = r["Transporter (TSO)"], type = r["Transaction Type"];
+    if (!pipeline || !type) continue;
+    seen.add(comboKey(pipeline, type));
+  }
+  const pipelines = [...new Set([...seen].map(k => k.split("||")[0]))].sort((a, b) => {
+    const ai = PIPELINE_ORDER.indexOf(a), bi = PIPELINE_ORDER.indexOf(b);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.localeCompare(b);
+  });
+  return pipelines.map(pipeline => {
+    const types = [...seen].filter(k => k.split("||")[0] === pipeline).map(k => k.split("||")[1]).sort((a, b) => {
+      const ai = TRANSACTION_TYPE_ORDER.indexOf(a), bi = TRANSACTION_TYPE_ORDER.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.localeCompare(b);
+    });
+    return { pipeline, types };
+  });
+}
+
+function buildChartPicker() {
+  const host = document.getElementById("chart-picker");
+  host.innerHTML = "";
+  for (const group of availableCombos()) {
+    const g = document.createElement("div");
+    g.className = "pick-group";
+    const gl = document.createElement("span");
+    gl.className = "pick-group-label";
+    gl.textContent = group.pipeline;
+    g.appendChild(gl);
+    for (const type of group.types) {
+      const key = comboKey(group.pipeline, type);
+      const btn = document.createElement("button");
+      btn.className = "series-btn";
+      btn.type = "button";
+      btn.dataset.key = key;
+      btn.innerHTML = '<span class="sw"></span>' + escapeHtml(type);
+      btn.addEventListener("click", () => toggleChartCombo(key));
+      g.appendChild(btn);
+    }
+    host.appendChild(g);
+  }
+  updateChartPickerButtons();
+}
+
+function toggleChartCombo(key) {
+  if (chartPicked.has(key)) { chartPicked.delete(key); chartSlots.delete(key); }
+  else { chartPicked.add(key); chartClaimSlot(key); }
+  updateChartPickerButtons();
+  renderChart();
+}
+
+function updateChartPickerButtons() {
+  document.querySelectorAll(".series-btn").forEach(btn => {
+    const key = btn.dataset.key, active = chartPicked.has(key);
+    btn.classList.toggle("active", active);
+    btn.querySelector(".sw").style.background = active ? chartColorOf(key) : "";
+  });
+}
+
+// Volume-weighted average Price for one (pipeline, type) combo, one point
+// per Trade Date it actually traded on. Falls back to a plain mean if
+// every bid on a date has zero/blank accepted volume.
+function computeSeries(rows, pipeline, type) {
+  const byDate = new Map();
+  for (const r of rows) {
+    if (r["Transporter (TSO)"] !== pipeline || r["Transaction Type"] !== type) continue;
+    if (r["Price"] === null || r["Price"] === undefined || !r["Trade Date"]) continue;
+    const d = r["Trade Date"];
+    if (!byDate.has(d)) byDate.set(d, []);
+    byDate.get(d).push({ price: r["Price"], vol: Number(r["Volume Accepted"]) || 0 });
+  }
+  const pts = [];
+  for (const [date, bids] of byDate) {
+    const totalVol = bids.reduce((a, b) => a + b.vol, 0);
+    const price = totalVol > 0 ? bids.reduce((a, b) => a + b.price * b.vol, 0) / totalVol : mean(bids.map(b => b.price));
+    pts.push({ date, price, trades: bids.length });
+  }
+  pts.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  return pts;
+}
+
+function chartNiceTicks(lo, hi, n) {
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag, step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+  const out = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) out.push(v);
+  return out;
+}
+const CHART_MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function chartAxisLabel(iso, spanDays) {
+  const p = iso.split("-");
+  return spanDays > 200 ? CHART_MON[+p[1] - 1] + " '" + p[0].slice(2) : p[2] + " " + CHART_MON[+p[1] - 1];
+}
+function fmtAxisNum(v, d) {
+  if (v === null || v === undefined || !isFinite(v)) return "–";
+  return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+const CHART_NS = "http://www.w3.org/2000/svg";
+function chartSvgEl(n, a) {
+  const e = document.createElementNS(CHART_NS, n);
+  for (const k in a) e.setAttribute(k, a[k]);
+  return e;
+}
+
+function renderChart() {
+  const host = document.getElementById("chart-host");
+  host.innerHTML = "";
+  if (!chartPicked.size) {
+    host.innerHTML = '<div class="chart-empty">Pick one or more pipeline / transaction type combinations above to see the price trend.</div>';
+    return;
+  }
+  const seriesList = [...chartPicked].map(key => {
+    const [pipeline, type] = key.split("||");
+    return { key, pipeline, type, pts: computeSeries(filtered, pipeline, type) };
+  }).filter(s => s.pts.length);
+  if (!seriesList.length) {
+    host.innerHTML = '<div class="chart-empty">No priced trades match the current table filters for the selected series.</div>';
+    return;
+  }
+
+  const allDates = [...new Set(seriesList.flatMap(s => s.pts.map(p => p.date)))].sort();
+  const dNum = iso => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+  const minD = dNum(allDates[0]), maxD = dNum(allDates[allDates.length - 1]);
+  const spanDays = Math.max(1, (maxD - minD) / 86400000);
+
+  let lo = Infinity, hi = -Infinity;
+  seriesList.forEach(s => s.pts.forEach(p => { lo = Math.min(lo, p.price); hi = Math.max(hi, p.price); }));
+  if (lo > 0 && lo / hi <= 0.55) lo = 0;
+  const pad = (hi - lo) * 0.08 || 1; hi += pad; if (lo < 0) lo -= pad;
+
+  const W = Math.max(680, host.clientWidth || 680), H = 360, ML = 66, MR = 66, MT = 26, MB = 32;
+  const x = iso => ML + (W - ML - MR) * (maxD === minD ? 0.5 : (dNum(iso) - minD) / (maxD - minD));
+  const y = v => MT + (H - MT - MB) * (1 - (v - lo) / (hi - lo));
+
+  const svg = chartSvgEl("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "img", "aria-label": "Price trend by pipeline and transaction type" });
+  svg.style.width = "100%"; svg.style.height = H + "px";
+
+  chartNiceTicks(lo, hi, 5).forEach(t => {
+    svg.appendChild(chartSvgEl("line", { x1: ML, x2: W - MR, y1: y(t), y2: y(t), stroke: "var(--border)", "stroke-width": 1 }));
+    const lb = chartSvgEl("text", { x: ML - 9, y: y(t) + 4, "text-anchor": "end", fill: "var(--muted)", "font-size": 11.5 });
+    lb.textContent = fmtAxisNum(t, 2); lb.style.fontVariantNumeric = "tabular-nums"; svg.appendChild(lb);
+    const rb = chartSvgEl("text", { x: W - MR + 9, y: y(t) + 4, "text-anchor": "start", fill: "var(--muted)", "font-size": 11.5 });
+    rb.textContent = fmtAxisNum(t / MMBTU_PER_M3, 2); rb.style.fontVariantNumeric = "tabular-nums"; svg.appendChild(rb);
+  });
+  if (lo < 0 && hi > 0) svg.appendChild(chartSvgEl("line", { x1: ML, x2: W - MR, y1: y(0), y2: y(0), stroke: "var(--border-strong)", "stroke-width": 1.5 }));
+
+  const lTitle = chartSvgEl("text", { x: ML, y: 14, fill: "var(--muted2)", "font-size": 11, "font-weight": 600 });
+  lTitle.textContent = "R$/MMBtu"; svg.appendChild(lTitle);
+  const rTitle = chartSvgEl("text", { x: W - MR, y: 14, "text-anchor": "end", fill: "var(--muted2)", "font-size": 11, "font-weight": 600 });
+  rTitle.textContent = "R$/m³"; svg.appendChild(rTitle);
+
+  const nT = Math.min(8, allDates.length);
+  for (let i = 0; i < nT; i++) {
+    const di = allDates[Math.round(i * (allDates.length - 1) / Math.max(1, nT - 1))];
+    const t = chartSvgEl("text", { x: x(di), y: H - 9, fill: "var(--muted)", "font-size": 11.5, "text-anchor": i === 0 ? "start" : (i === nT - 1 ? "end" : "middle") });
+    t.textContent = chartAxisLabel(di, spanDays); svg.appendChild(t);
+  }
+
+  seriesList.forEach(s => {
+    let d = "";
+    s.pts.forEach((p, i) => { d += (i === 0 ? "M" : "L") + x(p.date).toFixed(1) + " " + y(p.price).toFixed(1) + " "; });
+    svg.appendChild(chartSvgEl("path", { d, fill: "none", stroke: chartColorOf(s.key), "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+    s.pts.forEach(p => {
+      svg.appendChild(chartSvgEl("circle", { cx: x(p.date), cy: y(p.price), r: 3, fill: chartColorOf(s.key), stroke: "var(--panel)", "stroke-width": 1.5 }));
+    });
+  });
+
+  const cross = chartSvgEl("line", { x1: 0, x2: 0, y1: MT, y2: H - MB, stroke: "var(--border-strong)", "stroke-width": 1, opacity: 0 });
+  svg.appendChild(cross);
+  const dots = chartSvgEl("g", { opacity: 0 });
+  svg.appendChild(dots);
+  const hit = chartSvgEl("rect", { x: ML, y: MT, width: W - ML - MR, height: H - MT - MB, fill: "transparent" });
+  svg.appendChild(hit);
+
+  const tt = document.getElementById("chart-tt");
+  hit.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) / r.width * W;
+    let nearest = allDates[0], best = Infinity;
+    for (const d of allDates) {
+      const dist = Math.abs(x(d) - px);
+      if (dist < best) { best = dist; nearest = d; }
+    }
+    cross.setAttribute("x1", x(nearest)); cross.setAttribute("x2", x(nearest)); cross.setAttribute("opacity", 1);
+    dots.innerHTML = ""; dots.setAttribute("opacity", 1);
+    let rows = "";
+    seriesList.forEach(s => {
+      const p = s.pts.find(pt => pt.date === nearest);
+      if (!p) return;
+      dots.appendChild(chartSvgEl("circle", { cx: x(p.date), cy: y(p.price), r: 4, fill: chartColorOf(s.key), stroke: "var(--panel)", "stroke-width": 2 }));
+      rows += '<tr><td><span class="sw" style="display:inline-block;background:' + chartColorOf(s.key) + '"></span> ' + escapeHtml(comboLabel(s.pipeline, s.type)) +
+        '</td><td class="v">' + fmtAxisNum(p.price, 2) + ' MMBtu · ' + fmtAxisNum(p.price / MMBTU_PER_M3, 2) + ' m³</td></tr>';
+    });
+    tt.innerHTML = '<div class="d">' + nearest + '</div><table>' + rows + '</table>';
+    tt.style.display = "block";
+    const tw = tt.offsetWidth, th = tt.offsetHeight;
+    tt.style.left = Math.min(window.innerWidth - tw - 12, ev.clientX + 16) + "px";
+    tt.style.top = Math.min(window.innerHeight - th - 12, Math.max(8, ev.clientY - th / 2)) + "px";
+  });
+  hit.addEventListener("pointerleave", () => {
+    tt.style.display = "none"; cross.setAttribute("opacity", 0); dots.setAttribute("opacity", 0);
+  });
+
+  host.appendChild(svg);
+
+  const lg = document.createElement("div");
+  lg.className = "legend";
+  seriesList.forEach(s => {
+    const span = document.createElement("span");
+    span.innerHTML = '<span class="sw" style="background:' + chartColorOf(s.key) + '"></span>' + escapeHtml(comboLabel(s.pipeline, s.type)) +
+      ' <span style="color:var(--muted)">(' + s.pts.length + ' trade date' + (s.pts.length === 1 ? "" : "s") + ')</span>';
+    lg.appendChild(span);
+  });
+  host.appendChild(lg);
+}
+
+function initChartDefaults() {
+  for (const group of availableCombos()) {
+    if (group.types.includes("GUS Acquisition")) {
+      const key = comboKey(group.pipeline, "GUS Acquisition");
+      chartPicked.add(key);
+      chartClaimSlot(key);
+    }
+  }
+}
 
 function fmtNum(v, maxFrac) {
   if (v === null || v === undefined || v === "") return "";
@@ -811,6 +1113,7 @@ function render() {
   applyFilters();
   sortRows();
   renderTable();
+  renderChart();
   updateArrows();
   updateQuickFilterButtons();
 }
@@ -854,6 +1157,8 @@ function initTheme() {
   btn.addEventListener("click", () => {
     const isDark = document.documentElement.getAttribute("data-theme") === "dark";
     setTheme(isDark ? "light" : "dark");
+    renderChart();
+    updateChartPickerButtons();
   });
 }
 
@@ -880,6 +1185,8 @@ async function init() {
   buildHeader();
   renderTsoRow();
   buildQuickFilters();
+  initChartDefaults();
+  buildChartPicker();
   render();
   document.getElementById("f-timing").addEventListener("change", render);
   document.getElementById("f-search").addEventListener("input", render);
@@ -902,6 +1209,10 @@ async function init() {
   // can't safely be embedded in a public static page.
   document.getElementById("btn-refresh").addEventListener("click", () => {
     location.href = location.pathname + "?refreshed=" + Date.now();
+  });
+  window.addEventListener("resize", () => {
+    clearTimeout(chartResizeTimer);
+    chartResizeTimer = setTimeout(renderChart, 140);
   });
   initTheme();
   initCrossLinks();
