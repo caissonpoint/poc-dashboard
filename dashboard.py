@@ -57,10 +57,13 @@ def load_payload():
     df = df.astype(object).where(pd.notna(df), None)
     records = df.to_dict(orient="records")
 
-    generated = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    _now_utc = dt.datetime.now(dt.timezone.utc)
+    generated = _now_utc.strftime("%Y-%m-%d %H:%M UTC")
+    generatedIso = _now_utc.isoformat()
 
     return {
         "generated": generated,
+        "generatedIso": generatedIso,
         "columns": COLUMNS,
         "displayNames": DISPLAY_NAMES,
         "rows": records,
@@ -113,8 +116,9 @@ h1 { font-size: 25px; margin: 0; letter-spacing: -.01em; }
 .header-links { display: flex; gap: 8px; flex-wrap: wrap; }
 .sources { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 14px; }
 .sources-label { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; margin-right: 2px; }
-.pill { font-size: 11.5px; color: var(--muted2); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
+.pill { font-size: 11.5px; color: var(--muted2); text-decoration: none; border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .pill:hover { background: var(--accent-soft); color: var(--text); border-color: var(--border-strong); }
+.ext-icon { width: 10px; height: 10px; display: inline-block; flex: none; opacity: .75; }
 .navlink { font-size: 11.5px; color: var(--accent); text-decoration: none; font-weight: 600; border: 1px solid var(--accent); border-radius: 999px; padding: 3px 10px; white-space: nowrap; }
 .navlink:hover { background: var(--accent); color: #fff; }
 #theme-toggle { display: inline-flex; align-items: center; justify-content: center; background: var(--panel); border: 1px solid var(--border-strong); border-radius: 6px; padding: 5px 9px; line-height: 0; cursor: pointer; color: var(--text); }
@@ -210,7 +214,7 @@ footer a { color: var(--accent); }
 </header>
 <div class="sources">
   <span class="sources-label">Data source</span>
-  <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Portal de Oferta de Capacidade</a>
+  <a class="pill" href="https://www.ofertadecapacidade.com.br/PEG/resultado" target="_blank" rel="noopener">Portal de Oferta de Capacidade<svg class="ext-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></a>
 </div>
 <div class="tso-row" id="tso-row"></div>
 <div class="chart-card">
@@ -1180,7 +1184,17 @@ async function init() {
     if (Array.isArray(savedPrefs.hidden)) hiddenCols = new Set(savedPrefs.hidden.filter(c => validCols.has(c)));
     if (savedPrefs.widths && typeof savedPrefs.widths === "object") columnWidths = Object.assign({}, DEFAULT_COL_WIDTH, savedPrefs.widths);
   }
-  document.getElementById("subtitle").textContent = "Last refreshed " + DATA.generated;
+  let subtitleText = "Last refreshed " + DATA.generated;
+  try {
+    const d = new Date(DATA.generatedIso);
+    if (!isNaN(d)) {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const localDate = d.toLocaleDateString(undefined, {year:"numeric", month:"2-digit", day:"2-digit"});
+      const localTime = d.toLocaleTimeString(undefined, {hour:"2-digit", minute:"2-digit"});
+      subtitleText += " (" + localDate + " " + localTime + " " + tz + ")";
+    }
+  } catch (e) { /* fall back to UTC-only text above */ }
+  document.getElementById("subtitle").textContent = subtitleText;
   populateSelect(document.getElementById("f-timing"), DATA.rows.map(r => r["Trade Timing"]));
   buildHeader();
   renderTsoRow();
