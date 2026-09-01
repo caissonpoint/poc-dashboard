@@ -509,32 +509,77 @@ function renderChart() {
   svg.appendChild(hit);
 
   const tt = document.getElementById("chart-tt");
-  hit.addEventListener("pointermove", ev => {
-    const r = svg.getBoundingClientRect();
-    const px = (ev.clientX - r.left) / r.width * W;
+  // Click-to-reveal hover model (matches ons-dashboard): hovering blank
+  // chart space shows nothing. Hovering directly on a line (within
+  // HOVER_PX vertical pixels of it, at the nearest plotted date) shows
+  // just that line's value, live, tracking the cursor. Clicking a spot
+  // that ISN'T on a line pins the full breakdown for that date (every
+  // series with a point there); clicking the same pinned date again
+  // unpins it, clicking a different spot re-pins there, and leaving the
+  // chart clears the pin.
+  const HOVER_PX = 14;
+  let pinned = null; // pinned date string, or null
+
+  function nearestDateAt(px) {
     let nearest = allDates[0], best = Infinity;
     for (const d of allDates) {
       const dist = Math.abs(x(d) - px);
       if (dist < best) { best = dist; nearest = d; }
     }
-    cross.setAttribute("x1", x(nearest)); cross.setAttribute("x2", x(nearest)); cross.setAttribute("opacity", 1);
+    return nearest;
+  }
+  function nearestLineAt(date, py) {
+    let nearest = null, nearestDist = Infinity;
+    seriesList.forEach(s => {
+      const p = s.pts.find(pt => pt.date === date);
+      if (!p) return;
+      const dy = Math.abs(y(p.price) - py);
+      if (dy < nearestDist) { nearestDist = dy; nearest = s; }
+    });
+    return (nearest && nearestDist <= HOVER_PX) ? nearest : null;
+  }
+  function showTooltip(date, focusSeries, clientX, clientY) {
+    cross.setAttribute("x1", x(date)); cross.setAttribute("x2", x(date)); cross.setAttribute("opacity", 1);
     dots.innerHTML = ""; dots.setAttribute("opacity", 1);
     let rows = "";
-    seriesList.forEach(s => {
-      const p = s.pts.find(pt => pt.date === nearest);
+    focusSeries.forEach(s => {
+      const p = s.pts.find(pt => pt.date === date);
       if (!p) return;
       dots.appendChild(chartSvgEl("circle", { cx: x(p.date), cy: y(p.price), r: 4, fill: chartColorOf(s.key), stroke: "var(--panel)", "stroke-width": 2 }));
       rows += '<tr><td><span class="sw" style="display:inline-block;background:' + chartColorOf(s.key) + '"></span> ' + escapeHtml(comboLabel(s.pipeline, s.type)) +
         '</td><td class="v">' + fmtAxisNum(p.price, 2) + ' MMBtu · ' + fmtAxisNum(p.price / MMBTU_PER_M3, 2) + ' m³</td></tr>';
     });
-    tt.innerHTML = '<div class="d">' + nearest + '</div><table>' + rows + '</table>';
+    tt.innerHTML = '<div class="d">' + date + '</div><table>' + rows + '</table>';
     tt.style.display = "block";
     const tw = tt.offsetWidth, th = tt.offsetHeight;
-    tt.style.left = Math.min(window.innerWidth - tw - 12, ev.clientX + 16) + "px";
-    tt.style.top = Math.min(window.innerHeight - th - 12, Math.max(8, ev.clientY - th / 2)) + "px";
+    tt.style.left = Math.min(window.innerWidth - tw - 12, clientX + 16) + "px";
+    tt.style.top = Math.min(window.innerHeight - th - 12, Math.max(8, clientY - th / 2)) + "px";
+  }
+  function hideTooltip() {
+    tt.style.display = "none"; cross.setAttribute("opacity", 0); dots.setAttribute("opacity", 0);
+  }
+
+  hit.addEventListener("pointermove", ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) / r.width * W;
+    const py = (ev.clientY - r.top) / r.height * H;
+    const nearest = nearestDateAt(px);
+    const line = nearestLineAt(nearest, py);
+    if (line) showTooltip(nearest, [line], ev.clientX, ev.clientY);
+    else if (pinned != null) showTooltip(pinned, seriesList, ev.clientX, ev.clientY);
+    else hideTooltip();
+  });
+  hit.addEventListener("click", ev => {
+    const r = svg.getBoundingClientRect();
+    const px = (ev.clientX - r.left) / r.width * W;
+    const py = (ev.clientY - r.top) / r.height * H;
+    const nearest = nearestDateAt(px);
+    if (nearestLineAt(nearest, py)) return; // clicking on a line: hover already shows it
+    if (pinned === nearest) { pinned = null; hideTooltip(); }
+    else { pinned = nearest; showTooltip(pinned, seriesList, ev.clientX, ev.clientY); }
   });
   hit.addEventListener("pointerleave", () => {
-    tt.style.display = "none"; cross.setAttribute("opacity", 0); dots.setAttribute("opacity", 0);
+    pinned = null; hideTooltip();
   });
 
   host.appendChild(svg);
