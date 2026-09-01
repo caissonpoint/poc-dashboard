@@ -208,6 +208,7 @@ footer a { color: var(--accent); }
     <div class="header-links">
       <a class="navlink" id="link-home" href="https://gasbrazil.com">&larr; GasBrazil.com</a>
       <a class="navlink" id="link-ons" href="https://ons.gasbrazil.com">ONS Balances Dashboard &rarr;</a>
+      <a class="navlink" id="link-contratos" href="https://poc2.gasbrazil.com">POC Contracts &rarr;</a>
     </div>
     <button id="theme-toggle" title="Toggle theme" aria-label="Toggle theme"></button>
   </div>
@@ -653,6 +654,11 @@ const SITE_LINKS = {
     caissonpoint: "https://caissonpoint.github.io/ons-dashboard/",
     hub: "https://gasbrazil.github.io/ons/",
   },
+  contratos: {
+    custom: "https://poc2.gasbrazil.com",
+    caissonpoint: "https://caissonpoint.github.io/poc-contratos/",
+    hub: "https://gasbrazil.github.io/contratos/",
+  },
 };
 
 function siteFlavor() {
@@ -666,6 +672,7 @@ function initCrossLinks() {
   const flavor = siteFlavor();
   document.getElementById("link-home").href = SITE_LINKS.home[flavor];
   document.getElementById("link-ons").href = SITE_LINKS.ons[flavor];
+  document.getElementById("link-contratos").href = SITE_LINKS.contratos[flavor];
 }
 
 function escapeHtml(s) {
