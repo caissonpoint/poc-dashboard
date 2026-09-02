@@ -21,6 +21,7 @@ DEFAULT_OUT = HERE / "docs" / "index.html"
 # typeface instead of POC silently falling back to the OS default because no
 # @font-face for "Degular" was ever registered on this page.
 FONT_PATH = HERE / "fonts" / "Degular.ttf"
+FAVICON_PATH = HERE / "favicon.png"
 
 # Price in the source data is R$/MMBtu. 28.8081 is the MMBtu-per-1000m3 factor
 # implied by the dataset's PCR (poder calorifico de referencia) convention --
@@ -82,7 +83,7 @@ TEMPLATE = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>POC Results Dashboard</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2303183D'/%3E%3Cpath d='M3 11.5 6 7l3 2.5L13 4' stroke='white' stroke-width='1.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="icon" href="{{FAVICON_DATA_URI}}">
 <style>
 __FONT_FACE__
 :root {
@@ -1304,7 +1305,20 @@ def write_dashboard(out_path=DEFAULT_OUT):
         # Repo checkout missing fonts/Degular.ttf -- degrade to the system
         # fallback stack rather than shipping a broken @font-face rule.
         font_face = ""
-    html = TEMPLATE.replace("__PAYLOAD__", b64).replace("__FONT_FACE__", font_face)
+    if FAVICON_PATH.exists():
+        favicon_b64 = base64.b64encode(FAVICON_PATH.read_bytes()).decode("ascii")
+        favicon_data_uri = "data:image/png;base64," + favicon_b64
+    else:
+        # Repo checkout missing favicon.png -- fall back to a plain gray
+        # square rather than a broken/missing icon link.
+        favicon_data_uri = (
+            "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
+            "viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' "
+            "fill='%2303183D'/%3E%3C/svg%3E"
+        )
+    html = (TEMPLATE.replace("__PAYLOAD__", b64)
+            .replace("__FONT_FACE__", font_face)
+            .replace("{{FAVICON_DATA_URI}}", favicon_data_uri))
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
